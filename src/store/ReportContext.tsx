@@ -11,6 +11,14 @@ import {
   isIndexedDbAvailable,
 } from '../lib/idbStore';
 import { createId } from '../utils/id';
+import { isSupabaseConfigured } from '../lib/supabase';
+import {
+  cloudDeleteDocument,
+  cloudGetAllDocuments,
+  cloudGetDocument,
+  cloudSaveDocument,
+  consumeOrganizationOperation,
+} from '../lib/supabaseDocuments';
 
 type Recipe = (draft: ReportDocument) => void;
 
@@ -42,6 +50,8 @@ export function ReportProvider({
   children,
   initialReport,
   persist = true,
+  organizationId,
+  userId,
 }: {
   children: ReactNode;
   /** When provided, seeds state with this document instead of reading
@@ -50,6 +60,8 @@ export function ReportProvider({
   /** When false, never reads or writes database. Used in print mode so
    * generating a PDF for one job can't clobber the user's real saved data. */
   persist?: boolean;
+  organizationId?: string;
+  userId?: string;
 }) {
   const [report, setReport] = useState<ReportDocument | null>(() => initialReport ?? null);
   const [allDocuments, setAllDocuments] = useState<ReportDocument[]>([]);
@@ -57,19 +69,23 @@ export function ReportProvider({
 
   // Load all documents from database on mount
   const refreshDocumentsList = useCallback(async () => {
-    if (!persist || !isIndexedDbAvailable()) {
+    if (!persist) {
       setLoadingDocs(false);
       return;
     }
     try {
-      const docs = await idbGetAllDocuments();
+      const docs = isSupabaseConfigured && organizationId
+        ? await cloudGetAllDocuments(organizationId)
+        : isIndexedDbAvailable()
+          ? await idbGetAllDocuments()
+          : [];
       setAllDocuments(docs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
     } catch (err) {
       console.error('Failed to load documents from IDB:', err);
     } finally {
       setLoadingDocs(false);
     }
-  }, [persist]);
+  }, [organizationId, persist]);
 
   useEffect(() => {
     refreshDocumentsList();
@@ -77,14 +93,22 @@ export function ReportProvider({
 
   // Save the current active document when it changes
   useEffect(() => {
-    if (!persist || !report || !isIndexedDbAvailable()) return;
+    if (!persist || !report) return;
     const handle = window.setTimeout(async () => {
       try {
         const updatedReport = {
           ...report,
           updatedAt: new Date().toISOString(),
         };
-        await idbSaveDocument(updatedReport);
+        if (isSupabaseConfigured && organizationId && userId) {
+          await cloudSaveDocument(organizationId, userId, updatedReport);
+        } else if (isIndexedDbAvailable()) {
+          if (isSupabaseConfigured && organizationId && userId) {
+            await cloudSaveDocument(organizationId, userId, updatedReport);
+          } else if (isIndexedDbAvailable()) {
+            await idbSaveDocument(updatedReport);
+          }
+        }
         setAllDocuments((prev) =>
           prev.map((d) => (d.id === updatedReport.id ? updatedReport : d))
         );
@@ -93,7 +117,7 @@ export function ReportProvider({
       }
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [report, persist]);
+  }, [organizationId, persist, report, userId]);
 
   const update = useCallback((recipe: Recipe) => {
     setReport((prev) => {
@@ -134,21 +158,26 @@ export function ReportProvider({
     }
     if (!persist) return;
     try {
-      const doc = await idbGetDocument(id);
+      const doc = isSupabaseConfigured && organizationId
+        ? await cloudGetDocument(organizationId, id)
+        : await idbGetDocument(id);
       if (doc) {
         setReport(doc);
       }
     } catch (err) {
       console.error('Failed to get document:', err);
     }
-  }, [persist, refreshDocumentsList]);
+  }, [organizationId, persist, refreshDocumentsList]);
 
   const createDocument = useCallback(async (type: 'report' | 'protocol', title?: string) => {
+    if (isSupabaseConfigured && organizationId) {
+      await consumeOrganizationOperation(organizationId);
+    }
     const defaults = createDefaultReportDocument();
     const now = new Date().toISOString();
     const newDoc: ReportDocument = {
       ...defaults,
-      id: createId('doc'),
+      id: isSupabaseConfigured && organizationId ? crypto.randomUUID() : createId('doc'),
       documentType: type,
       createdAt: now,
       updatedAt: now,
@@ -158,34 +187,46 @@ export function ReportProvider({
         systemName: title || defaults.documentInfo.systemName,
       },
     };
-    if (persist && isIndexedDbAvailable()) {
+    if (persist && isSupabaseConfigured && organizationId && userId) {
+      await cloudSaveDocument(organizationId, userId, newDoc);
+      await refreshDocumentsList();
+    } else if (persist && isIndexedDbAvailable()) {
       await idbSaveDocument(newDoc);
       await refreshDocumentsList();
     }
     setReport(newDoc);
     return newDoc;
-  }, [persist, refreshDocumentsList]);
+  }, [organizationId, persist, refreshDocumentsList, userId]);
 
   const deleteDoc = useCallback(async (id: string) => {
-    if (persist && isIndexedDbAvailable()) {
+    if (persist && isSupabaseConfigured && organizationId) {
+      await cloudDeleteDocument(organizationId, id);
+      await refreshDocumentsList();
+      if (report && report.id === id) setReport(null);
+    } else if (persist && isIndexedDbAvailable()) {
       await idbDeleteDocument(id);
       await refreshDocumentsList();
       if (report && report.id === id) {
         setReport(null);
       }
     }
-  }, [persist, report, refreshDocumentsList]);
+  }, [organizationId, persist, report, refreshDocumentsList]);
 
   const duplicateDoc = useCallback(async (id: string, asType?: 'report' | 'protocol') => {
     if (!persist) throw new Error('Cannot duplicate in print-only mode');
-    const sourceDoc = await idbGetDocument(id);
+    if (isSupabaseConfigured && organizationId) {
+      await consumeOrganizationOperation(organizationId);
+    }
+    const sourceDoc = isSupabaseConfigured && organizationId
+      ? await cloudGetDocument(organizationId, id)
+      : await idbGetDocument(id);
     if (!sourceDoc) throw new Error('Source document not found');
 
     const now = new Date().toISOString();
     const targetType = asType || sourceDoc.documentType;
     const duplicated: ReportDocument = {
       ...sourceDoc,
-      id: createId('doc'),
+      id: isSupabaseConfigured && organizationId ? crypto.randomUUID() : createId('doc'),
       documentType: targetType,
       createdAt: now,
       updatedAt: now,
@@ -198,14 +239,22 @@ export function ReportProvider({
       },
     };
 
-    await idbSaveDocument(duplicated);
+    if (isSupabaseConfigured && organizationId && userId) {
+      await cloudSaveDocument(organizationId, userId, duplicated);
+    } else {
+      await idbSaveDocument(duplicated);
+    }
     await refreshDocumentsList();
 
     // Reset status on duplicate — always starts as draft
     const resetDup = { ...duplicated, status: 'draft' as const, lockedAt: null, lockedBy: null, lockedByDisplayName: null };
-    await idbSaveDocument(resetDup);
+    if (isSupabaseConfigured && organizationId && userId) {
+      await cloudSaveDocument(organizationId, userId, resetDup);
+    } else {
+      await idbSaveDocument(resetDup);
+    }
     return resetDup;
-  }, [persist, refreshDocumentsList]);
+  }, [organizationId, persist, refreshDocumentsList, userId]);
 
   // ── Document lifecycle ──────────────────────────────────────────────
   const submitForReview = useCallback(async () => {
@@ -216,10 +265,14 @@ export function ReportProvider({
     });
     setReport(updated);
     if (persist) {
-      await idbSaveDocument(updated);
+      if (isSupabaseConfigured && organizationId && userId) {
+        await cloudSaveDocument(organizationId, userId, updated);
+      } else {
+        await idbSaveDocument(updated);
+      }
       await refreshDocumentsList();
     }
-  }, [report, persist, refreshDocumentsList]);
+  }, [organizationId, persist, report, refreshDocumentsList, userId]);
 
   const lockDocument = useCallback(async (userId: string, displayName: string) => {
     if (!report) return;
@@ -233,10 +286,14 @@ export function ReportProvider({
     });
     setReport(updated);
     if (persist) {
-      await idbSaveDocument(updated);
+      if (isSupabaseConfigured && organizationId && userId) {
+        await cloudSaveDocument(organizationId, userId, updated);
+      } else {
+        await idbSaveDocument(updated);
+      }
       await refreshDocumentsList();
     }
-  }, [report, persist, refreshDocumentsList]);
+  }, [organizationId, persist, report, refreshDocumentsList, userId]);
 
   const unlockDocument = useCallback(async () => {
     if (!report) return;
@@ -249,10 +306,14 @@ export function ReportProvider({
     });
     setReport(updated);
     if (persist) {
-      await idbSaveDocument(updated);
+      if (isSupabaseConfigured && organizationId && userId) {
+        await cloudSaveDocument(organizationId, userId, updated);
+      } else {
+        await idbSaveDocument(updated);
+      }
       await refreshDocumentsList();
     }
-  }, [report, persist, refreshDocumentsList]);
+  }, [organizationId, persist, report, refreshDocumentsList, userId]);
 
   const isLocked = report?.status === 'approved';
 

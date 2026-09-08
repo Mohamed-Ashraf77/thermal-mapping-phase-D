@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2, Lock, AlertTriangle, Moon, Sun } from 'lucide-rea
 import { useAuth } from '../../store/AuthContext';
 import { useTheme } from '../../store/ThemeContext';
 import { validatePassword } from '../../lib/authUtils';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import { DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD } from '../../types/user';
 
 const inputCls =
@@ -134,7 +135,9 @@ export function LoginScreen() {
           if (result.lockedUntil) startLockCountdown(result.lockedUntil);
           setError('Account is temporarily locked due to too many failed attempts.');
         } else if (result.reason === 'account_inactive') {
-          setError('Your account has been deactivated. Contact your System Administrator.');
+          setError(isSupabaseConfigured
+            ? 'Your account is not assigned to an organization yet. Contact your administrator.'
+            : 'Your account has been deactivated. Contact your System Administrator.');
         } else {
           setError('Invalid username or password.');
         }
@@ -181,7 +184,7 @@ export function LoginScreen() {
             <form onSubmit={handleSubmit} className="space-y-3">
               <input
                 type="text"
-                placeholder="Username"
+                placeholder={isSupabaseConfigured ? 'Email address' : 'Username'}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required

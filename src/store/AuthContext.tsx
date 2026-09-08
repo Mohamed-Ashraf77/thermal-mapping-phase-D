@@ -9,7 +9,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type { Session, User, UserRole } from '../types/user';
-import { ROLE_PERMISSIONS, MAX_LOGIN_ATTEMPTS } from '../types/user';
+import { ROLE_PERMISSIONS, MAX_LOGIN_ATTEMPTS, SESSION_DURATION_MS } from '../types/user';
 import { logEvent } from '../lib/auditStore';
 import {
   createSession,
@@ -30,6 +30,53 @@ import {
   changePassword,
 } from '../lib/userStore';
 import { verifyPassword } from '../lib/authUtils';
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
+
+function getCloudRole(role: unknown): UserRole {
+  if (role === 'owner' || role === 'admin') return 'system_admin';
+  if (role === 'editor') return 'validation_engineer';
+  return 'reviewer';
+}
+
+export interface CloudMembership {
+  organizationId: string;
+  organizationName: string;
+  role: string;
+}
+
+async function getCloudMemberships(userId: string): Promise<CloudMembership[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('organization_members')
+    .select('organization_id, role, organizations(name)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).flatMap((membership) => {
+    const organization = Array.isArray(membership.organizations)
+      ? membership.organizations[0]
+      : membership.organizations;
+    return organization?.name
+      ? [{ organizationId: membership.organization_id, organizationName: organization.name, role: membership.role }]
+      : [];
+  });
+}
+
+function createCloudSession(user: User, membership: CloudMembership): Session {
+  const now = new Date().toISOString();
+  return {
+    id: user.id,
+    userId: user.id,
+    username: user.email,
+    displayName: user.displayName,
+    role: user.role,
+    startedAt: now,
+    lastActivityAt: now,
+    expiresAt: new Date(Date.now() + SESSION_DURATION_MS).toISOString(),
+    organizationId: membership.organizationId,
+    organizationName: membership.organizationName,
+    organizationRole: membership.role,
+  };
+}
 
 export type LoginResult =
   | { ok: true; mustChangePassword: boolean }
@@ -42,6 +89,8 @@ interface AuthContextValue {
   initialising: boolean;
   /** seconds remaining in the current session (counts down) */
   sessionSecondsRemaining: number;
+  organizations: CloudMembership[];
+  switchOrganization: (organizationId: string) => void;
   login: (username: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   /** Change the currently signed-in user's own password */
@@ -60,6 +109,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [organizations, setOrganizations] = useState<CloudMembership[]>([]);
   const [initialising, setInitialising] = useState(true);
   const [sessionSecondsRemaining, setSessionSecondsRemaining] = useState(0);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -67,6 +117,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Boot: seed default admin + restore session ───────────────────
   useEffect(() => {
     async function boot() {
+      if (isSupabaseConfigured) {
+        const { data, error } = await getSupabaseClient().auth.getSession();
+        if (error) throw error;
+        if (data.session?.user) {
+          const memberships = await getCloudMemberships(data.session.user.id);
+          const membership = memberships[0];
+          if (!membership) {
+            setInitialising(false);
+            return;
+          }
+          setOrganizations(memberships);
+          const cloudUser: User = {
+            id: data.session.user.id,
+            username: data.session.user.email ?? data.session.user.id,
+            displayName: data.session.user.user_metadata.display_name
+              || data.session.user.email
+              || 'User',
+            email: data.session.user.email ?? '',
+            role: getCloudRole(membership.role),
+            passwordHash: '',
+            isActive: true,
+            createdAt: data.session.user.created_at,
+            createdBy: 'supabase',
+            lastLoginAt: data.session.user.last_sign_in_at ?? null,
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+            mustChangePassword: false,
+          };
+          const restored = createCloudSession(cloudUser, membership);
+          setSession(restored);
+        }
+        setInitialising(false);
+        return;
+      }
+
       await seedDefaultAdminIfNeeded();
       const saved = loadSession();
       if (saved && !isSessionExpired(saved)) {
@@ -167,6 +252,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Auth actions ──────────────────────────────────────────────────
   const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
+    if (isSupabaseConfigured) {
+      const { data, error } = await getSupabaseClient().auth.signInWithPassword({
+        email: username,
+        password,
+      });
+      if (error || !data.user) {
+        return { ok: false, reason: 'invalid_credentials' };
+      }
+      const memberships = await getCloudMemberships(data.user.id);
+      const membership = memberships[0];
+      if (!membership) {
+        await getSupabaseClient().auth.signOut();
+        return { ok: false, reason: 'account_inactive' };
+      }
+      setOrganizations(memberships);
+
+      const cloudUser: User = {
+        id: data.user.id,
+        username: data.user.email ?? username,
+        displayName: data.user.user_metadata.display_name || data.user.email || username,
+        email: data.user.email ?? username,
+        role: getCloudRole(membership.role),
+        passwordHash: '',
+        isActive: true,
+        createdAt: data.user.created_at,
+        createdBy: 'supabase',
+        lastLoginAt: data.user.last_sign_in_at ?? null,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        mustChangePassword: false,
+      };
+      const cloudSession = createCloudSession(cloudUser, membership);
+      setSession(cloudSession);
+      return { ok: true, mustChangePassword: false };
+    }
+
     const user = await getUserByUsername(username);
 
     if (!user) {
@@ -229,10 +350,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     clearSession();
     setSession(null);
+    setOrganizations([]);
+    if (isSupabaseConfigured) {
+      void getSupabaseClient().auth.signOut();
+    }
   }, [session]);
+
+  const switchOrganization = useCallback((organizationId: string) => {
+    if (!isSupabaseConfigured) return;
+    const membership = organizations.find((item) => item.organizationId === organizationId);
+    if (!membership) {
+      throw new Error('You are not a member of that organization.');
+    }
+    setSession((current) => current
+      ? {
+          ...current,
+          organizationId: membership.organizationId,
+          organizationName: membership.organizationName,
+          organizationRole: membership.role,
+          role: getCloudRole(membership.role),
+        }
+      : current);
+  }, [organizations]);
 
   const changeOwnPassword = useCallback(async (newPassword: string) => {
     if (!session) throw new Error('Not authenticated.');
+    if (isSupabaseConfigured) {
+      const { error } = await getSupabaseClient().auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      return;
+    }
     await changePassword(session.userId, newPassword);
     await logEvent({ sessionId: session.id, userId: session.userId, username: session.username,
       userDisplayName: session.displayName, userRole: session.role,
@@ -258,9 +405,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => ({
     session, initialising, sessionSecondsRemaining,
+    organizations, switchOrganization,
     login, logout, changeOwnPassword,
     createUser, updateUserById, loadAllUsers, can,
-  }), [session, initialising, sessionSecondsRemaining, login, logout, changeOwnPassword, createUser, updateUserById, loadAllUsers, can]);
+  }), [session, initialising, sessionSecondsRemaining, organizations, switchOrganization, login, logout, changeOwnPassword, createUser, updateUserById, loadAllUsers, can]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

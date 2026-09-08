@@ -24,7 +24,7 @@
  * the same active section without drilling through multiple layers.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   LayoutDashboard,
   FileText,
@@ -49,6 +49,8 @@ import {
   X,
   Moon,
   Sun,
+  Building2,
+  CreditCard,
 } from 'lucide-react';
 import { useReport } from '../../store/ReportContext';
 import { useAnalysis } from '../../store/AnalysisContext';
@@ -56,9 +58,12 @@ import { useAudit } from '../../store/AuditContext';
 import { SessionBar } from '../auth/SessionBar';
 import { DocumentStatusBar } from './DocumentStatusBar';
 import { UserManagementPanel } from '../auth/UserManagement';
+import { SubscriptionAdminPanel } from '../auth/SubscriptionAdminPanel';
 import { AuditTrailViewer } from '../audit/AuditTrailViewer';
 import { Dashboard } from './Dashboard';
 import { useTheme } from '../../store/ThemeContext';
+import { useAuth } from '../../store/AuthContext';
+import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
 
 // ── Section / Step definitions ─────────────────────────────────────────────
 
@@ -67,6 +72,7 @@ export type SectionId =
   | 'home'
   | 'users'         // Phase A — to be implemented
   | 'audit-viewer'  // Phase B — to be implemented
+  | 'subscription'
   // Document workspace
   | 'document-info'
   | 'introduction'
@@ -115,6 +121,13 @@ const APP_NAV: NavItem[] = [
     label: 'System Audit Trail',
     labelAr: 'سجل الأحداث الشامل',
     icon: <Activity className="h-4 w-4" />,
+    group: 'Administration',
+  },
+  {
+    id: 'subscription',
+    label: 'Subscription',
+    labelAr: 'الاشتراك',
+    icon: <CreditCard className="h-4 w-4" />,
     group: 'Administration',
   },
 ];
@@ -223,6 +236,60 @@ function SidebarItem({
   );
 }
 
+function SubscriptionSummary({ organizationId }: { organizationId?: string }) {
+  const [subscription, setSubscription] = useState<{
+    planName: string;
+    operationLimit: number;
+    operationsUsed: number;
+    expiresAt: string;
+    status: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !organizationId) return;
+    getSupabaseClient()
+      .from('subscriptions')
+      .select('plan_name, operation_limit, operations_used, expires_at, status')
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Failed to load subscription summary:', error);
+          return;
+        }
+        if (data) {
+          setSubscription({
+            planName: data.plan_name,
+            operationLimit: data.operation_limit,
+            operationsUsed: data.operations_used,
+            expiresAt: data.expires_at,
+            status: data.status,
+          });
+        }
+      });
+  }, [organizationId]);
+
+  if (!subscription) return null;
+
+  const daysRemaining = Math.ceil((new Date(subscription.expiresAt).getTime() - Date.now()) / 86400000);
+  const usagePercent = subscription.operationLimit > 0
+    ? Math.min(100, Math.round((subscription.operationsUsed / subscription.operationLimit) * 100))
+    : 100;
+  const needsAttention = daysRemaining <= 7 || usagePercent >= 80 || subscription.status === 'suspended';
+
+  return (
+    <div className={`hidden items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[10px] sm:flex ${
+      needsAttention
+        ? 'border-amber-200 bg-amber-50 text-amber-800'
+        : 'border-slate-200 bg-slate-50 text-slate-600'
+    }`}>
+      <span className="font-bold">{subscription.planName}</span>
+      <span>{subscription.operationsUsed}/{subscription.operationLimit} operations</span>
+      <span>{daysRemaining >= 0 ? `${daysRemaining}d left` : 'Expired'}</span>
+    </div>
+  );
+}
+
 // ── Main Layout ──────────────────────────────────────────────────────────────
 
 export function AppLayout() {
@@ -230,6 +297,7 @@ export function AppLayout() {
   const { sensors } = useAnalysis();
   const { log } = useAudit();
   const { theme, toggleTheme } = useTheme();
+  const { session, organizations, switchOrganization } = useAuth();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -460,6 +528,25 @@ export function AppLayout() {
 
           {/* Header actions */}
           <div className="flex items-center gap-2">
+            {organizations.length > 1 && (
+              <label className="hidden items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-600 sm:flex">
+                <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                <span className="sr-only">Active organization</span>
+                <select
+                  value={session?.organizationId ?? ''}
+                  onChange={(event) => switchOrganization(event.target.value)}
+                  className="max-w-32 bg-transparent text-xs font-semibold text-slate-700 outline-none"
+                  aria-label="Active organization"
+                >
+                  {organizations.map((organization) => (
+                    <option key={organization.organizationId} value={organization.organizationId}>
+                      {organization.organizationName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <SubscriptionSummary organizationId={session?.organizationId} />
             <button
               type="button"
               onClick={toggleTheme}
@@ -585,6 +672,9 @@ function AppContent({
   // Audit viewer — Phase B
   if (activeSection === 'audit-viewer') {
     return <AuditTrailViewer />;
+  }
+  if (activeSection === 'subscription') {
+    return <SubscriptionAdminPanel />;
   }
 
   // Dashboard

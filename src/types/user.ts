@@ -77,6 +77,9 @@ export interface Session {
   startedAt: string;         // ISO
   lastActivityAt: string;    // ISO — updated on every action
   expiresAt: string;         // ISO — startedAt + SESSION_DURATION_MS
+  organizationId?: string;
+  organizationName?: string;
+  organizationRole?: string;
 }
 
 // ── Policy constants ──────────────────────────────────────────────────────

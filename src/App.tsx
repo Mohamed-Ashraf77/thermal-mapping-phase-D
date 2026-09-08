@@ -30,7 +30,7 @@ function AuthGatedApp() {
     // outside ReportProvider/AnalysisProvider so document events can be
     // logged without needing an open document.
     <AuditProvider>
-      <ReportProvider>
+      <ReportProvider key={session.organizationId ?? 'local'} organizationId={session.organizationId} userId={session.userId}>
         <AnalysisProvider>
           <AppLayout />
         </AnalysisProvider>
