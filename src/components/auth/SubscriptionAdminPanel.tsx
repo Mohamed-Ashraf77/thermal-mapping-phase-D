@@ -34,10 +34,11 @@ export function SubscriptionAdminPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const canView = session?.organizationRole === 'owner' || session?.organizationRole === 'admin';
   const canManage = session?.organizationRole === 'owner';
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !session?.organizationId || !canManage) {
+    if (!isSupabaseConfigured || !session?.organizationId || !canView) {
       setLoading(false);
       return;
     }
@@ -65,7 +66,7 @@ export function SubscriptionAdminPanel() {
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [canManage, session?.organizationId]);
+  }, [canView, session?.organizationId]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -103,8 +104,8 @@ export function SubscriptionAdminPanel() {
     setMessage('Subscription updated successfully.');
   }
 
-  if (!canManage) {
-    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Only the organization owner can manage subscriptions.</div>;
+  if (!canView) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Only organization owners and administrators can view subscriptions.</div>;
   }
   if (!isSupabaseConfigured) {
     return <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">Subscription management requires Supabase mode.</div>;
@@ -124,21 +125,22 @@ export function SubscriptionAdminPanel() {
           <CreditCard className="h-5 w-5 text-slate-500" /> Subscription Management
         </h1>
         <p className="mt-1 text-sm text-slate-500">{session.organizationName}</p>
+        {!canManage && <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">View-only access. Only the organization owner can change subscription settings.</p>}
       </div>
       <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-xs font-bold text-slate-600">Plan name<input className={inputClassName + ' mt-1'} value={form.plan_name} onChange={(e) => setForm({ ...form, plan_name: e.target.value })} /></label>
-          <label className="text-xs font-bold text-slate-600">Operation limit<input type="number" min="0" step="1" className={inputClassName + ' mt-1'} value={form.operation_limit} onChange={(e) => setForm({ ...form, operation_limit: e.target.value })} /></label>
-          <label className="text-xs font-bold text-slate-600">Starts on<input type="date" className={inputClassName + ' mt-1'} value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} /></label>
-          <label className="text-xs font-bold text-slate-600">Expires on<input type="date" className={inputClassName + ' mt-1'} value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} /></label>
-          <label className="text-xs font-bold text-slate-600">Status<select className={inputClassName + ' mt-1'} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as Subscription['status'] })}><option value="trialing">Trialing</option><option value="active">Active</option><option value="expired">Expired</option><option value="suspended">Suspended</option></select></label>
+          <label className="text-xs font-bold text-slate-600">Plan name<input disabled={!canManage} className={inputClassName + ' mt-1 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500'} value={form.plan_name} onChange={(e) => setForm({ ...form, plan_name: e.target.value })} /></label>
+          <label className="text-xs font-bold text-slate-600">Operation limit<input disabled={!canManage} type="number" min="0" step="1" className={inputClassName + ' mt-1 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500'} value={form.operation_limit} onChange={(e) => setForm({ ...form, operation_limit: e.target.value })} /></label>
+          <label className="text-xs font-bold text-slate-600">Starts on<input disabled={!canManage} type="date" className={inputClassName + ' mt-1 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500'} value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} /></label>
+          <label className="text-xs font-bold text-slate-600">Expires on<input disabled={!canManage} type="date" className={inputClassName + ' mt-1 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500'} value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} /></label>
+          <label className="text-xs font-bold text-slate-600">Status<select disabled={!canManage} className={inputClassName + ' mt-1 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500'} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as Subscription['status'] })}><option value="trialing">Trialing</option><option value="active">Active</option><option value="expired">Expired</option><option value="suspended">Suspended</option></select></label>
         </div>
         <p className="text-xs text-slate-500">Used operations: <strong>{subscription.operations_used}</strong> of {subscription.operation_limit}. Updating the limit does not reset usage.</p>
         {error && <p className="flex items-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700"><AlertTriangle className="h-3.5 w-3.5" />{error}</p>}
         {message && <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />{message}</p>}
-        <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-60">
+        {canManage && <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-60">
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save subscription
-        </button>
+        </button>}
       </form>
     </div>
   );
