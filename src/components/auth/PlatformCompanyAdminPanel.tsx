@@ -38,14 +38,14 @@ export function PlatformCompanyAdminPanel() {
       <div>
         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Platform Administration</p>
         <h1 className="mt-1 flex items-center gap-2 text-xl font-bold text-slate-900"><Building2 className="h-5 w-5 text-slate-500" /> Create New Company</h1>
-        <p className="mt-1 text-sm text-slate-500">Create the company, its initial owner account, and subscription in one secure operation.</p>
+        <p className="mt-1 text-sm text-slate-500">Create the company, its initial administrator account, and subscription in one secure operation.</p>
       </div>
       <form onSubmit={submit} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="text-xs font-bold text-slate-600">Company name<input required className={inputClass} value={form.name} onChange={(e) => update('name', e.target.value)} /></label>
           <label className="text-xs font-bold text-slate-600">Company slug<input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" className={inputClass} placeholder="acme-pharma" value={form.slug} onChange={(e) => update('slug', e.target.value)} /></label>
-          <label className="text-xs font-bold text-slate-600">Owner full name<input required className={inputClass} value={form.ownerDisplayName} onChange={(e) => update('ownerDisplayName', e.target.value)} /></label>
-          <label className="text-xs font-bold text-slate-600">Owner email<input required type="email" className={inputClass} value={form.ownerEmail} onChange={(e) => update('ownerEmail', e.target.value)} /></label>
+          <label className="text-xs font-bold text-slate-600">Admin full name<input required className={inputClass} value={form.ownerDisplayName} onChange={(e) => update('ownerDisplayName', e.target.value)} /></label>
+          <label className="text-xs font-bold text-slate-600">Admin email<input required type="email" className={inputClass} value={form.ownerEmail} onChange={(e) => update('ownerEmail', e.target.value)} /></label>
           <label className="text-xs font-bold text-slate-600">Temporary password<input required minLength={8} type="password" className={inputClass} value={form.ownerPassword} onChange={(e) => update('ownerPassword', e.target.value)} /></label>
         </div>
         <div className="border-t border-slate-100 pt-4">

@@ -70,11 +70,21 @@ Deno.serve(async (request) => {
     return reply({ error: userError?.message ?? 'Could not create owner.' }, 400);
   }
 
+  const ownerMembership = await admin.from('organization_members').insert({
+    organization_id: organization.id, user_id: caller.user.id, role: 'owner',
+  });
+  const ownerProfile = await admin.from('organization_user_profiles').upsert({
+    organization_id: organization.id,
+    user_id: caller.user.id,
+    email: caller.user.email ?? '',
+    display_name: caller.user.user_metadata?.display_name ?? caller.user.email ?? 'Platform Owner',
+    role: 'owner',
+  });
   const membership = await admin.from('organization_members').insert({
-    organization_id: organization.id, user_id: created.user.id, role: 'owner',
+    organization_id: organization.id, user_id: created.user.id, role: 'admin',
   });
   const profile = await admin.from('organization_user_profiles').insert({
-    organization_id: organization.id, user_id: created.user.id, email, display_name: displayName, role: 'owner',
+    organization_id: organization.id, user_id: created.user.id, email, display_name: displayName, role: 'admin',
   });
   const subscription = await admin.from('subscriptions').insert({
     organization_id: organization.id, plan_name: planName, operation_limit: operationLimit,
@@ -82,7 +92,9 @@ Deno.serve(async (request) => {
     status,
   });
 
-  if (membership.error || profile.error || subscription.error) {
+  if (ownerMembership.error || ownerProfile.error || membership.error || profile.error || subscription.error) {
+    await admin.from('organization_members').delete().eq('organization_id', organization.id).eq('user_id', caller.user.id);
+    await admin.from('organization_user_profiles').delete().eq('organization_id', organization.id).eq('user_id', caller.user.id);
     await admin.from('organization_members').delete().eq('organization_id', organization.id);
     await admin.from('organization_user_profiles').delete().eq('organization_id', organization.id);
     await admin.from('subscriptions').delete().eq('organization_id', organization.id);
@@ -91,5 +103,5 @@ Deno.serve(async (request) => {
     return reply({ error: membership.error?.message ?? profile.error?.message ?? subscription.error?.message ?? 'Could not finish company setup.' }, 400);
   }
 
-  return reply({ organization, owner: { id: created.user.id, email }, subscription: { planName, operationLimit } });
+  return reply({ organization, admin: { id: created.user.id, email }, subscription: { planName, operationLimit } });
 });
