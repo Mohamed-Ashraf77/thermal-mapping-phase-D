@@ -42,6 +42,9 @@ function UserDialog({
   });
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const availableRoles = session?.organizationRole === 'owner'
+    ? ROLES
+    : ROLES.filter((role) => role !== 'system_admin' && role !== 'qa_manager');
 
   function setField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -65,12 +68,13 @@ function UserDialog({
     try {
       let saved: User;
       if (isEdit) {
-        saved = await updateUserById(editUser!.id, {
+        const patch: Partial<User> = {
           displayName: form.displayName.trim(),
           email: form.email.trim(),
-          role: form.role,
           mustChangePassword: form.mustChangePassword,
-        });
+        };
+        if (session?.organizationRole === 'owner') patch.role = form.role;
+        saved = await updateUserById(editUser!.id, patch);
         await log({ action: 'USER_UPDATED', detail: `Updated user: ${saved.username} (role: ${saved.role})` });
       } else {
         saved = await createUser({
@@ -129,7 +133,7 @@ function UserDialog({
               onChange={(e) => setField('role', e.target.value as UserRole)}
               disabled={isEdit && editUser?.id === currentUserId}
             >
-              {ROLES.map((r) => (
+              {availableRoles.map((r) => (
                 <option key={r} value={r}>{ROLE_LABELS[r]}</option>
               ))}
             </select>

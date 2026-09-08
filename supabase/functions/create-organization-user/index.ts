@@ -48,6 +48,7 @@ Deno.serve(async (request) => {
     .maybeSingle();
   if (membershipError) return response({ error: membershipError.message }, 500);
   if (!membership || !['owner', 'admin'].includes(membership.role)) return response({ error: 'Insufficient permissions.' }, 403);
+  if (membership.role === 'admin' && role === 'admin') return response({ error: 'Only the organization owner can create administrators.' }, 403);
 
   const { data: created, error: createError } = await adminClient.auth.admin.createUser({
     email: String(email).trim().toLowerCase(),
