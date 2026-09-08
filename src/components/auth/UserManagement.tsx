@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../store/AuthContext';
 import { useAudit } from '../../store/AuditContext';
-import { validatePassword, hashPassword } from '../../lib/authUtils';
+import { validatePassword } from '../../lib/authUtils';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS } from '../../types/user';
 import type { User, UserRole } from '../../types/user';
 
@@ -199,12 +199,9 @@ function ResetPasswordDialog({ userId, onClose }: { userId: string; onClose: () 
     if (newPass !== confirm) { setError('Passwords do not match.'); return; }
     setSaving(true);
     try {
-      const hash = await hashPassword(newPass);
       await updateUserById(userId, {
-        passwordHash: hash,
+        passwordHash: newPass,
         mustChangePassword: true,
-        failedLoginAttempts: 0,
-        lockedUntil: null,
       });
       await log({ action: 'PASSWORD_RESET_BY_ADMIN', detail: `Admin reset password for userId: ${userId}` });
       onClose();

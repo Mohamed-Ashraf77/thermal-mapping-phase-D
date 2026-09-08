@@ -423,6 +423,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUserById = useCallback(async (id: string, patch: Partial<Omit<User, 'id'>>) => {
     if (!session) throw new Error('Not authenticated.');
+    if (isSupabaseConfigured) {
+      if (!session.organizationId || !['owner', 'admin'].includes(session.organizationRole ?? '')) {
+        throw new Error('Only organization owners and admins can manage users.');
+      }
+      const { data, error } = await getSupabaseClient().functions.invoke('manage-organization-user', {
+        body: { organizationId: session.organizationId, userId: id, patch },
+      });
+      if (error) throw error;
+      return data.user as User;
+    }
     return updateUser(id, patch);
   }, [session]);
 
