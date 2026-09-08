@@ -44,7 +44,7 @@ function UserDialog({
   const [saving, setSaving] = useState(false);
   const availableRoles = session?.organizationRole === 'owner'
     ? ROLES
-    : ROLES.filter((role) => role !== 'system_admin' && role !== 'qa_manager');
+    : ROLES.filter((role) => role !== 'system_admin');
 
   function setField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));

@@ -24,7 +24,7 @@ Deno.serve(async (request) => {
   if (!membership || !['owner', 'admin'].includes(membership.role)) return reply({ error: 'Insufficient permissions.' }, 403);
   const { data: target } = await client.from('organization_members').select('role').eq('organization_id', organizationId).eq('user_id', userId).maybeSingle();
   if (!target) return reply({ error: 'User not found in this organization.' }, 404);
-  if (['system_admin', 'qa_manager'].includes(patch.role) && membership.role !== 'owner') return reply({ error: 'Only the organization owner can assign administrators.' }, 403);
+  if (patch.role === 'system_admin' && membership.role !== 'owner') return reply({ error: 'Only the organization owner can assign system administrators.' }, 403);
 
   const authPatch: Record<string, unknown> = {};
   if (patch.email) authPatch.email = String(patch.email).trim().toLowerCase();
