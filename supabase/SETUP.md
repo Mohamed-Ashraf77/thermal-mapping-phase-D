@@ -22,6 +22,11 @@ the in-app **Administration > Subscription** page.
 If the project was initialized with an older copy of the schema, run
 [`subscription-admin-policy.sql`](./subscription-admin-policy.sql) once in the
 Supabase SQL Editor to enable subscription updates for owners and admins.
+Also run [`audit-log-details.sql`](./audit-log-details.sql) once to add the
+complete audit event fields used by the cross-device Audit Trail.
+Run [`platform-admin.sql`](./platform-admin.sql) once, then add the platform
+owner's Auth user ID to `public.platform_admins`. Deploy
+`create-organization` with `supabase functions deploy create-organization`.
 
 ## Deploying the app on Vercel
 

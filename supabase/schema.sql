@@ -59,10 +59,21 @@ create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   user_id uuid references auth.users(id),
+  username text not null default '',
+  user_display_name text not null default '',
+  user_role text not null default '',
+  session_id text not null default '',
   action text not null,
+  severity text not null default 'low',
   document_id uuid references public.documents(id) on delete set null,
+  document_number text,
+  document_type text,
+  field_path text,
+  old_value text,
+  new_value text,
   detail text not null default '',
   outcome text not null default 'success' check (outcome in ('success', 'failure')),
+  failure_reason text,
   created_at timestamptz not null default now()
 );
 

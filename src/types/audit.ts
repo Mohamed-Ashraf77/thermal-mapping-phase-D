@@ -199,6 +199,9 @@ export interface AuditEntry {
   /** Session that was active when the event occurred. */
   sessionId: string;
 
+  /** Organization that owns this event. Local-only entries may be unscoped. */
+  organizationId: string | null;
+
   action: AuditAction;
   severity: AuditSeverity;
 

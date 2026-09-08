@@ -90,6 +90,7 @@ interface AuthContextValue {
   /** seconds remaining in the current session (counts down) */
   sessionSecondsRemaining: number;
   organizations: CloudMembership[];
+  isPlatformOwner: boolean;
   switchOrganization: (organizationId: string) => void;
   login: (username: string, password: string) => Promise<LoginResult>;
   logout: () => void;
@@ -110,6 +111,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [organizations, setOrganizations] = useState<CloudMembership[]>([]);
+  const [isPlatformOwner, setIsPlatformOwner] = useState(false);
   const [initialising, setInitialising] = useState(true);
   const [sessionSecondsRemaining, setSessionSecondsRemaining] = useState(0);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -121,6 +123,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data, error } = await getSupabaseClient().auth.getSession();
         if (error) throw error;
         if (data.session?.user) {
+          const { data: platformAccess } = await getSupabaseClient()
+            .from('platform_admins')
+            .select('user_id')
+            .eq('user_id', data.session.user.id)
+            .maybeSingle();
+          setIsPlatformOwner(!!platformAccess);
           const memberships = await getCloudMemberships(data.session.user.id);
           const membership = memberships[0];
           if (!membership) {
@@ -165,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           username: refreshed.username,
           userDisplayName: refreshed.displayName,
           userRole: refreshed.role,
+          organizationId: refreshed.organizationId ?? null,
           action: 'SYSTEM_STARTUP',
           detail: 'Application loaded — existing session restored',
           outcome: 'success',
@@ -178,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             username: saved.username,
             userDisplayName: saved.displayName,
             userRole: saved.role,
+            organizationId: saved.organizationId ?? null,
             action: 'SESSION_EXPIRED',
             detail: 'Session expired while application was closed',
             outcome: 'success',
@@ -216,6 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           username: session.username,
           userDisplayName: session.displayName,
           userRole: session.role,
+          organizationId: session.organizationId ?? null,
           action: 'SESSION_EXPIRED',
           detail: 'Session timed out after 30 minutes of inactivity',
           outcome: 'success',
@@ -285,6 +296,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       const cloudSession = createCloudSession(cloudUser, membership);
       setSession(cloudSession);
+      const { data: platformAccess } = await getSupabaseClient()
+        .from('platform_admins')
+        .select('user_id')
+        .eq('user_id', data.user.id)
+        .maybeSingle();
+      setIsPlatformOwner(!!platformAccess);
+      await logEvent({
+        sessionId: cloudSession.id,
+        userId: cloudUser.id,
+        username: cloudUser.username,
+        userDisplayName: cloudUser.displayName,
+        userRole: cloudUser.role,
+        organizationId: cloudSession.organizationId,
+        action: 'USER_LOGIN_SUCCESS',
+        detail: `Role: ${cloudSession.organizationRole}`,
+        outcome: 'success',
+      });
       return { ok: true, mustChangePassword: false };
     }
 
@@ -336,7 +364,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Log success with the new session id
     await logEvent({ sessionId: newSession.id, userId: user.id, username: user.username,
-      userDisplayName: user.displayName, userRole: user.role, action: 'USER_LOGIN_SUCCESS',
+      userDisplayName: user.displayName, userRole: user.role,
+      organizationId: newSession.organizationId ?? null, action: 'USER_LOGIN_SUCCESS',
       detail: `Role: ${user.role}`, outcome: 'success' });
 
     return { ok: true, mustChangePassword: user.mustChangePassword };
@@ -346,11 +375,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (session) {
       logEvent({ sessionId: session.id, userId: session.userId, username: session.username,
         userDisplayName: session.displayName, userRole: session.role,
+        organizationId: session.organizationId ?? null,
         action: 'USER_LOGOUT', detail: 'Manual sign-out', outcome: 'success' });
     }
     clearSession();
     setSession(null);
     setOrganizations([]);
+    setIsPlatformOwner(false);
     if (isSupabaseConfigured) {
       void getSupabaseClient().auth.signOut();
     }
@@ -383,6 +414,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await changePassword(session.userId, newPassword);
     await logEvent({ sessionId: session.id, userId: session.userId, username: session.username,
       userDisplayName: session.displayName, userRole: session.role,
+      organizationId: session.organizationId ?? null,
       action: 'PASSWORD_CHANGED', detail: 'User changed own password', outcome: 'success' });
   }, [session]);
 
@@ -471,9 +503,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     session, initialising, sessionSecondsRemaining,
     organizations, switchOrganization,
+    isPlatformOwner,
     login, logout, changeOwnPassword,
     createUser, updateUserById, loadAllUsers, can,
-  }), [session, initialising, sessionSecondsRemaining, organizations, switchOrganization, login, logout, changeOwnPassword, createUser, updateUserById, loadAllUsers, can]);
+  }), [session, initialising, sessionSecondsRemaining, organizations, switchOrganization, isPlatformOwner, login, logout, changeOwnPassword, createUser, updateUserById, loadAllUsers, can]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -51,6 +51,7 @@ import {
   Sun,
   Building2,
   CreditCard,
+  Plus,
 } from 'lucide-react';
 import { useReport } from '../../store/ReportContext';
 import { useAnalysis } from '../../store/AnalysisContext';
@@ -59,6 +60,7 @@ import { SessionBar } from '../auth/SessionBar';
 import { DocumentStatusBar } from './DocumentStatusBar';
 import { UserManagementPanel } from '../auth/UserManagement';
 import { SubscriptionAdminPanel } from '../auth/SubscriptionAdminPanel';
+import { PlatformCompanyAdminPanel } from '../auth/PlatformCompanyAdminPanel';
 import { AuditTrailViewer } from '../audit/AuditTrailViewer';
 import { Dashboard } from './Dashboard';
 import { useTheme } from '../../store/ThemeContext';
@@ -73,6 +75,7 @@ export type SectionId =
   | 'users'         // Phase A — to be implemented
   | 'audit-viewer'  // Phase B — to be implemented
   | 'subscription'
+  | 'platform-companies'
   // Document workspace
   | 'document-info'
   | 'introduction'
@@ -130,10 +133,24 @@ const APP_NAV: NavItem[] = [
     icon: <CreditCard className="h-4 w-4" />,
     group: 'Administration',
   },
+  {
+    id: 'platform-companies',
+    label: 'Companies',
+    labelAr: 'الشركات',
+    icon: <Plus className="h-4 w-4" />,
+    group: 'Platform',
+  },
 ];
 
 // Document workspace nav items
 const DOC_NAV: NavItem[] = [
+  {
+    id: 'platform-companies',
+    label: 'Companies',
+    labelAr: 'الشركات',
+    icon: <Plus className="h-4 w-4" />,
+    group: 'Platform',
+  },
   // ── General Info ──────────────────────────────────────────────────
   { id: 'document-info',   label: 'Document Info',          labelAr: 'بيانات المستند',          icon: <FileText className="h-4 w-4" />,       group: 'General Info' },
   { id: 'introduction',    label: 'Introduction & Scope',   labelAr: 'المقدمة والنطاق',          icon: <ClipboardList className="h-4 w-4" />,   group: 'General Info' },
@@ -297,7 +314,7 @@ export function AppLayout() {
   const { sensors } = useAnalysis();
   const { log } = useAudit();
   const { theme, toggleTheme } = useTheme();
-  const { session, organizations, switchOrganization } = useAuth();
+  const { session, organizations, switchOrganization, isPlatformOwner } = useAuth();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -370,7 +387,10 @@ export function AppLayout() {
 
   // ── Derived nav state ─────────────────────────────────────────────
   const inWorkspace = !!report;
-  const navItems = inWorkspace ? DOC_NAV : APP_NAV;
+  const canOpenCompanyAdmin = isPlatformOwner || session?.organizationRole === 'owner';
+  const navItems = inWorkspace
+    ? DOC_NAV.filter((item) => item.id !== 'platform-companies' || canOpenCompanyAdmin)
+    : APP_NAV.filter((item) => item.id !== 'platform-companies' || canOpenCompanyAdmin);
   const groups = getGroups(navItems);
 
   // ── Sidebar content ───────────────────────────────────────────────
@@ -675,6 +695,9 @@ function AppContent({
   }
   if (activeSection === 'subscription') {
     return <SubscriptionAdminPanel />;
+  }
+  if (activeSection === 'platform-companies') {
+    return <PlatformCompanyAdminPanel />;
   }
 
   // Dashboard

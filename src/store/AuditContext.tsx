@@ -39,6 +39,7 @@ export function AuditProvider({ children }: { children: ReactNode }) {
       username: session?.username ?? 'system',
       userDisplayName: session?.displayName ?? 'System',
       userRole: session?.role ?? 'system',
+      organizationId: session?.organizationId ?? null,
       ...params,
     });
   }, [session]);

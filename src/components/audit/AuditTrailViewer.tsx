@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Activity, Download, Filter, RefreshCw, Search,
   ChevronLeft, ChevronRight, Shield, AlertTriangle,
   CheckCircle2, Info, X,
 } from 'lucide-react';
 import { useAudit } from '../../store/AuditContext';
+import { useAuth } from '../../store/AuthContext';
 import { queryAuditEntries, countAuditEntries, exportAuditTrailCsv } from '../../lib/auditStore';
 import type { AuditFilter } from '../../lib/auditStore';
 import { AUDIT_ACTION_LABELS } from '../../types/audit';
@@ -171,6 +172,7 @@ function EntryDetail({ entry, onClose }: { entry: AuditEntry; onClose: () => voi
 // ── Main viewer ────────────────────────────────────────────────────────────
 export function AuditTrailViewer() {
   const { log } = useAudit();
+  const { session } = useAuth();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [allTimeCount, setAllTimeCount] = useState(0);
@@ -183,7 +185,11 @@ export function AuditTrailViewer() {
   const [selectedEntry, setSelectedEntry] = useState<AuditEntry | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  const effectiveFilter: AuditFilter = { ...filter, searchText: searchText || undefined };
+  const effectiveFilter = useMemo<AuditFilter>(() => ({
+    ...filter,
+    organizationId: session?.organizationId,
+    searchText: searchText || undefined,
+  }), [filter, searchText, session?.organizationId]);
 
   const load = useCallback(async (p: number, f: AuditFilter) => {
     setLoading(true);
@@ -192,16 +198,16 @@ export function AuditTrailViewer() {
       setEntries(result.entries);
       setTotalCount(result.totalCount);
       setHasMore(result.hasMore);
-      const total = await countAuditEntries();
+      const total = await countAuditEntries({ organizationId: session?.organizationId });
       setAllTimeCount(total);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session?.organizationId]);
 
   useEffect(() => {
     load(page, effectiveFilter);
-  }, [page, filter, searchText]);
+  }, [page, effectiveFilter, load]);
 
   function updateFilter(patch: Partial<AuditFilter>) {
     setFilter((f) => ({ ...f, ...patch }));
