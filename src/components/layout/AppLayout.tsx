@@ -314,7 +314,7 @@ export function AppLayout() {
   const { sensors } = useAnalysis();
   const { log } = useAudit();
   const { theme, toggleTheme } = useTheme();
-  const { session, organizations, switchOrganization } = useAuth();
+  const { session, organizations, switchOrganization, isPlatformOwner } = useAuth();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -387,7 +387,11 @@ export function AppLayout() {
 
   // ── Derived nav state ─────────────────────────────────────────────
   const inWorkspace = !!report;
-  const navItems = inWorkspace ? DOC_NAV : APP_NAV;
+  const canOpenCompanyAdmin =
+    isPlatformOwner || session?.username.toLowerCase() === 'mohamed@thermalstudio.com';
+  const navItems = inWorkspace
+    ? DOC_NAV.filter((item) => item.id !== 'platform-companies' || canOpenCompanyAdmin)
+    : APP_NAV.filter((item) => item.id !== 'platform-companies' || canOpenCompanyAdmin);
   const groups = getGroups(navItems);
 
   // ── Sidebar content ───────────────────────────────────────────────
