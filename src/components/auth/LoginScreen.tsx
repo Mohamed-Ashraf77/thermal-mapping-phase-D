@@ -247,12 +247,13 @@ export function LoginScreen() {
             </p>
           </div>
 
-          {/* First-launch hint */}
-          <p className="mt-3 text-center text-[10px] text-slate-400">
-            First launch? Sign in with{' '}
-            <span className="font-mono font-bold text-slate-600">{DEFAULT_ADMIN_USERNAME}</span>
-            {' '}/ <span className="font-mono font-bold text-slate-600">{DEFAULT_ADMIN_PASSWORD}</span>
-          </p>
+          {!isSupabaseConfigured && (
+            <p className="mt-3 text-center text-[10px] text-slate-400">
+              First launch? Sign in with{' '}
+              <span className="font-mono font-bold text-slate-600">{DEFAULT_ADMIN_USERNAME}</span>
+              {' '}/ <span className="font-mono font-bold text-slate-600">{DEFAULT_ADMIN_PASSWORD}</span>
+            </p>
+          )}
           <p className="mt-4 text-center text-[10px] font-medium text-slate-400">
             Developed by Mohamed Ashraf
           </p>

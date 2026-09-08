@@ -388,6 +388,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const createUser = useCallback(async (params: Parameters<typeof createUserInDb>[0]) => {
     if (!session) throw new Error('Not authenticated.');
+    if (isSupabaseConfigured) {
+      if (!session.organizationId || !['owner', 'admin'].includes(session.organizationRole ?? '')) {
+        throw new Error('Only organization owners and admins can create users.');
+      }
+      const { data, error } = await getSupabaseClient().functions.invoke('create-organization-user', {
+        body: {
+          organizationId: session.organizationId,
+          email: params.email,
+          displayName: params.displayName,
+          password: params.password,
+          role: params.role,
+        },
+      });
+      if (error) throw error;
+      return {
+        id: data.user.id,
+        username: params.email,
+        displayName: params.displayName,
+        email: params.email,
+        role: params.role,
+        passwordHash: '',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        createdBy: session.userId,
+        lastLoginAt: null,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        mustChangePassword: true,
+      };
+    }
     return createUserInDb(params);
   }, [session]);
 
@@ -396,7 +426,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return updateUser(id, patch);
   }, [session]);
 
-  const loadAllUsers = useCallback(() => getAllUsers(), []);
+  const loadAllUsers = useCallback(async () => {
+    if (isSupabaseConfigured && session?.organizationId) {
+      const { data, error } = await getSupabaseClient()
+        .from('organization_user_profiles')
+        .select('user_id, email, display_name, role, is_active, created_at')
+        .eq('organization_id', session.organizationId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((user) => ({
+        id: user.user_id,
+        username: user.email,
+        displayName: user.display_name,
+        email: user.email,
+        role: getCloudRole(user.role),
+        passwordHash: '',
+        isActive: user.is_active,
+        createdAt: user.created_at,
+        createdBy: 'supabase',
+        lastLoginAt: null,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        mustChangePassword: false,
+      }));
+    }
+    return getAllUsers();
+  }, [session?.organizationId]);
 
   const can = useCallback((action: keyof typeof ROLE_PERMISSIONS[UserRole]): boolean => {
     if (!session) return false;
