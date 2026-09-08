@@ -27,8 +27,16 @@ Deno.serve(async (request) => {
   if (callerError || !callerData.user) return response({ error: 'Unauthorized.' }, 401);
 
   const body = await request.json();
-  const { organizationId, email, displayName, password, role } = body;
-  if (!organizationId || !email || !displayName || !password || !['admin', 'editor', 'reviewer', 'viewer'].includes(role)) {
+  const { organizationId, email, displayName, password } = body;
+  const appRole = body.role;
+  const roleMap: Record<string, string> = {
+    system_admin: 'admin',
+    qa_manager: 'admin',
+    validation_engineer: 'editor',
+    reviewer: 'reviewer',
+  };
+  const role = roleMap[appRole] ?? (['admin', 'editor', 'reviewer', 'viewer'].includes(appRole) ? appRole : null);
+  if (!organizationId || !email || !displayName || !password || !role) {
     return response({ error: 'Invalid user details.' }, 400);
   }
 
