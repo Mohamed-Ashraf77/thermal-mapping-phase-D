@@ -27,6 +27,10 @@ complete audit event fields used by the cross-device Audit Trail.
 Run [`platform-admin.sql`](./platform-admin.sql) once, then add the platform
 owner's Auth user ID to `public.platform_admins`. Deploy
 `create-organization` with `supabase functions deploy create-organization`.
+Deploy `manage-platform-company` as well for the company list and editing
+screen. For an existing company created with the old function, run
+[`platform-company-repair.sql`](./platform-company-repair.sql), then replace
+the placeholders in its commented repair statements for that company's admin.
 
 ## Deploying the app on Vercel
 
