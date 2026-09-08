@@ -34,7 +34,7 @@ export function SubscriptionAdminPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const canManage = session?.organizationRole === 'owner' || session?.organizationRole === 'admin';
+  const canManage = session?.organizationRole === 'owner';
 
   useEffect(() => {
     if (!isSupabaseConfigured || !session?.organizationId || !canManage) {
@@ -104,7 +104,7 @@ export function SubscriptionAdminPanel() {
   }
 
   if (!canManage) {
-    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Only organization owners and administrators can manage subscriptions.</div>;
+    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Only the organization owner can manage subscriptions.</div>;
   }
   if (!isSupabaseConfigured) {
     return <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">Subscription management requires Supabase mode.</div>;

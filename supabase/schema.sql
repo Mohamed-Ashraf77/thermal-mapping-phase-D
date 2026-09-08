@@ -152,10 +152,10 @@ create policy "Members can view their subscription"
   on public.subscriptions for select
   using (public.is_organization_member(organization_id));
 
-create policy "Admins can manage their subscription"
+create policy "Owners can manage their subscription"
   on public.subscriptions for update
-  using (public.has_organization_role(organization_id, array['owner', 'admin']))
-  with check (public.has_organization_role(organization_id, array['owner', 'admin']));
+  using (public.has_organization_role(organization_id, array['owner']))
+  with check (public.has_organization_role(organization_id, array['owner']));
 
 create policy "Members can view organization documents"
   on public.documents for select
