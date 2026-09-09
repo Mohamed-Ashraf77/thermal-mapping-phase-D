@@ -13,6 +13,7 @@ import { LoadingDescriptionPages, chunkLoadingItems } from './LoadingDescription
 import { ChamberLayoutPage, ChamberPhotosPage } from './ChamberLayoutPage';
 import { TestDataSheetPages, chunkTestDataRows } from './TestDataSheetPages';
 import { ChartsPages, countChartsPages } from './ChartsPages';
+import { StudyResultsPage } from './StudyResultsPage';
 import { ChallengeTestPages, countChallengeTestPages } from './ChallengeTestPages';
 import { CalibrationPages, countCalibrationPages } from './CalibrationPage';
 import { ReportPageFrame } from './ReportPageFrame';
@@ -114,7 +115,7 @@ export function ReportPreview() {
   // Report Mode (Dynamic length as before)
   const FIXED_PAGES_BEFORE_LOADING = 7;
   const FIXED_PAGES_AFTER_LOADING = 2;
-  const FIXED_TRAILING_PAGES_REPORT = 6;
+  const FIXED_TRAILING_PAGES_REPORT = 7;
 
   const loadingPageCount = chunkLoadingItems(report.loadingItems).length;
   
@@ -188,12 +189,13 @@ export function ReportPreview() {
       <ChartsPages startPageNumber={chartsStartPage} totalPages={totalPages} />
       <ChallengeTestPages startPageNumber={challengeStartPage} totalPages={totalPages} />
       <CalibrationPages startPageNumber={calibrationStartPage} totalPages={totalPages} />
-      <SopAvailabilityPage pageNumber={sopPageNumber} totalPages={totalPages} />
-      <CriticalParametersCalibrationPage pageNumber={criticalParamsPageNumber} totalPages={totalPages} />
-      <SignatureLogPage pageNumber={signatureLogPageNumber} totalPages={totalPages} />
-      <DeviationsPage pageNumber={deviationsPageNumber} totalPages={totalPages} />
-      <AttachmentsListPage pageNumber={attachmentsPageNumber} totalPages={totalPages} />
-      <FinalApprovalPage pageNumber={finalApprovalPageNumber} totalPages={totalPages} />
+      <StudyResultsPage pageNumber={sopPageNumber} totalPages={totalPages} />
+      <SopAvailabilityPage pageNumber={sopPageNumber + 1} totalPages={totalPages} />
+      <CriticalParametersCalibrationPage pageNumber={criticalParamsPageNumber + 1} totalPages={totalPages} />
+      <SignatureLogPage pageNumber={signatureLogPageNumber + 1} totalPages={totalPages} />
+      <DeviationsPage pageNumber={deviationsPageNumber + 1} totalPages={totalPages} />
+      <AttachmentsListPage pageNumber={attachmentsPageNumber + 1} totalPages={totalPages} />
+      <FinalApprovalPage pageNumber={finalApprovalPageNumber + 1} totalPages={totalPages} />
     </div>
   );
 }
