@@ -126,7 +126,12 @@ export function ReportPreview() {
     report.chamberDescription.acceptanceCriteria,
     false,
   );
-  const chartsPageCount = countChartsPages(report.chamberLayout.dataloggers, sensors);
+  const chartsPageCount = countChartsPages(
+    report.chamberLayout.dataloggers,
+    sensors,
+    report.studyPeriod.startDateTime,
+    report.studyPeriod.endDateTime,
+  );
   const challengePageCount = countChallengeTestPages(
     report.challengeTests,
     report.chamberLayout.dataloggers,

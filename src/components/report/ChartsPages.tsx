@@ -3,6 +3,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { useReport } from '../../store/ReportContext';
 import { useAnalysis } from '../../store/AnalysisContext';
 import { ReportPageFrame } from './ReportPageFrame';
+import { filterByRange } from '../../lib/analysis';
 import type { SensorData, SensorReading } from '../../lib/analysis';
 import type { DataloggerPosition } from '../../types/report';
 
@@ -34,6 +35,12 @@ function chunk<T>(arr: T[], size: number): T[][] {
 interface ChartEntry {
   position: DataloggerPosition;
   sensor: SensorData;
+}
+
+function toEpoch(datetimeLocal: string): number | null {
+  if (!datetimeLocal) return null;
+  const ms = new Date(datetimeLocal).getTime();
+  return Number.isNaN(ms) ? null : ms;
 }
 
 function SensorChart({ entry }: { entry: ChartEntry }) {
@@ -70,7 +77,12 @@ export function ChartsPages(props: { startPageNumber: number; totalPages: number
   const { report } = useReport();
   const { sensors } = useAnalysis();
   if (!report) return null;
-  const byId = new Map(sensors.map((s) => [s.id, s]));
+  const boundedSensors = filterByRange(
+    sensors,
+    toEpoch(report.studyPeriod.startDateTime),
+    toEpoch(report.studyPeriod.endDateTime),
+  );
+  const byId = new Map(boundedSensors.map((s) => [s.id, s]));
 
   const entries: ChartEntry[] = report.chamberLayout.dataloggers
     .slice()
@@ -103,8 +115,14 @@ export function ChartsPages(props: { startPageNumber: number; totalPages: number
   );
 }
 
-export function countChartsPages(dataloggers: DataloggerPosition[], sensors: SensorData[]): number {
-  const byId = new Map(sensors.map((s) => [s.id, s]));
+export function countChartsPages(
+  dataloggers: DataloggerPosition[],
+  sensors: SensorData[],
+  startDateTime = '',
+  endDateTime = '',
+): number {
+  const boundedSensors = filterByRange(sensors, toEpoch(startDateTime), toEpoch(endDateTime));
+  const byId = new Map(boundedSensors.map((s) => [s.id, s]));
   const count = dataloggers.filter((d) => {
     const s = byId.get(d.serialNumber);
     return s && s.rows.length > 0;
