@@ -49,6 +49,17 @@ export async function idbGetAll<T>(): Promise<T[]> {
   });
 }
 
+/** Same as `idbGetAll` but scoped to records tagged with `documentId`, used
+ * when sensor CSVs are linked to a specific document. Records without a
+ * matching `documentId` field are filtered out client-side (no dedicated
+ * index needed since this store is typically small). */
+export async function idbGetAllForDocument<T extends { documentId?: string }>(
+  documentId: string,
+): Promise<T[]> {
+  const all = await idbGetAll<T>();
+  return all.filter((record) => record.documentId === documentId);
+}
+
 export async function idbPut<T extends { id: string }>(record: T): Promise<void> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -74,6 +85,25 @@ export async function idbClear(): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Deletes only the sensor records belonging to one document (local/offline
+ * mode, where all documents' sensor files share one IndexedDB store). */
+export async function idbClearForDocument(documentId: string): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const records = (req.result as Array<{ id: string; documentId?: string }>) || [];
+      records
+        .filter((r) => r.documentId === documentId)
+        .forEach((r) => store.delete(r.id));
+    };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

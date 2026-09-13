@@ -2,11 +2,24 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 import type { SensorData } from '../lib/analysis';
 import { parseSensorCsvMulti } from '../lib/analysis';
-import { idbClear, idbDelete, idbGetAll, idbPut, isIndexedDbAvailable } from '../lib/idbStore';
+import {
+  idbClearForDocument,
+  idbDelete,
+  idbGetAllForDocument,
+  idbPut,
+  isIndexedDbAvailable,
+} from '../lib/idbStore';
+import { isSupabaseConfigured } from '../lib/supabase';
+import {
+  cloudClearSensorFiles,
+  cloudDeleteSensorFile,
+  cloudGetAllSensorFiles,
+  cloudSaveSensorFile,
+} from '../lib/supabaseSensorFiles';
 
 interface AnalysisContextValue {
   sensors: SensorData[];
-  /** True while the initial IndexedDB load is in flight. */
+  /** True while the initial sensor data load is in flight. */
   loading: boolean;
   /** Parses and persists newly uploaded CSV files (re-uploading a file with
    * the same name replaces its stored data). */
@@ -21,33 +34,52 @@ export function AnalysisProvider({
   children,
   initialSensors,
   persist = true,
+  organizationId,
+  documentId,
 }: {
   children: ReactNode;
-  /** When provided, seeds state with this list instead of reading
-   * IndexedDB — used by the /print/:id hydration route. */
+  /** When provided, seeds state with this list instead of reading storage —
+   * used by the /print/:id hydration route. */
   initialSensors?: SensorData[];
-  /** When false, never reads or writes IndexedDB. */
+  /** When false, never reads or writes any storage backend. */
   persist?: boolean;
+  /** Cloud organization the current document belongs to. When set (and
+   * Supabase is configured), sensor files are stored in Supabase scoped to
+   * `documentId` so any member of the organization sees the same uploaded
+   * data when they open that document. */
+  organizationId?: string;
+  /** The currently open document's id. Sensor data is always scoped to one
+   * document — switching documents shows only that document's own uploads. */
+  documentId?: string;
 }) {
   const [sensors, setSensors] = useState<SensorData[]>(initialSensors ?? []);
-  const [loading, setLoading] = useState(persist && !initialSensors);
+  const [loading, setLoading] = useState(persist && !initialSensors && !!documentId);
 
-  // Load any previously uploaded sensor CSVs from IndexedDB on first mount,
-  // so a refresh no longer loses the data you spent time uploading.
+  const useCloud = isSupabaseConfigured && !!organizationId;
+
+  // Load any previously uploaded sensor CSVs for the current document, so
+  // opening it (from any device/browser, or after a refresh) shows the same
+  // data without needing to re-upload.
   useEffect(() => {
-    if (!persist) return;
+    if (!persist || initialSensors) return;
+    if (!documentId) {
+      setSensors([]);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     async function load() {
-      if (!isIndexedDbAvailable()) {
-        setLoading(false);
-        return;
-      }
+      setLoading(true);
       try {
-        const stored = await idbGetAll<SensorData>();
+        const stored = useCloud
+          ? await cloudGetAllSensorFiles(organizationId!, documentId!)
+          : isIndexedDbAvailable()
+            ? await idbGetAllForDocument<SensorData & { documentId?: string }>(documentId!)
+            : [];
         if (!cancelled) setSensors(stored);
-      } catch {
-        // IndexedDB can fail in some locked-down environments — the app
-        // still works, uploads just won't survive a refresh in that case.
+      } catch (err) {
+        console.error('Failed to load sensor files:', err);
+        if (!cancelled) setSensors([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -56,9 +88,11 @@ export function AnalysisProvider({
     return () => {
       cancelled = true;
     };
-  }, [persist]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persist, documentId, organizationId, useCloud]);
 
   const addFiles = useCallback(async (files: FileList | File[]) => {
+    if (!documentId) return;
     const fileArray = Array.from(files).filter((f) => /\.csv$/i.test(f.name));
     const parsedArrays = await Promise.all(
       fileArray.map(
@@ -81,27 +115,45 @@ export function AnalysisProvider({
       return Array.from(byId.values());
     });
 
-    if (persist && isIndexedDbAvailable()) {
-      await Promise.all(allParsed.map((s) => idbPut(s))).catch(() => {
-        // Non-fatal — the in-memory state above still has the data for
-        // this session even if persisting it failed.
-      });
+    if (persist) {
+      if (useCloud) {
+        await Promise.all(
+          allParsed.map((s) => cloudSaveSensorFile(organizationId!, documentId, s)),
+        ).catch((err) => {
+          console.error('Failed to save sensor files to cloud:', err);
+        });
+      } else if (isIndexedDbAvailable()) {
+        await Promise.all(
+          allParsed.map((s) => idbPut({ ...s, documentId })),
+        ).catch(() => {
+          // Non-fatal — the in-memory state above still has the data for
+          // this session even if persisting it failed.
+        });
+      }
     }
-  }, [persist]);
+  }, [persist, useCloud, organizationId, documentId]);
 
   const removeSensor = useCallback((id: string) => {
     setSensors((prev) => prev.filter((s) => s.id !== id));
-    if (persist && isIndexedDbAvailable()) {
-      idbDelete(id).catch(() => {});
+    if (persist && documentId) {
+      if (useCloud) {
+        cloudDeleteSensorFile(organizationId!, documentId, id).catch(() => {});
+      } else if (isIndexedDbAvailable()) {
+        idbDelete(id).catch(() => {});
+      }
     }
-  }, [persist]);
+  }, [persist, useCloud, organizationId, documentId]);
 
   const clearAll = useCallback(() => {
     setSensors([]);
-    if (persist && isIndexedDbAvailable()) {
-      idbClear().catch(() => {});
+    if (persist && documentId) {
+      if (useCloud) {
+        cloudClearSensorFiles(organizationId!, documentId).catch(() => {});
+      } else if (isIndexedDbAvailable()) {
+        idbClearForDocument(documentId).catch(() => {});
+      }
     }
-  }, [persist]);
+  }, [persist, useCloud, organizationId, documentId]);
 
   const value = useMemo(
     () => ({ sensors, loading, addFiles, removeSensor, clearAll }),

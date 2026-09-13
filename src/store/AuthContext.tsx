@@ -38,6 +38,33 @@ function getCloudRole(role: unknown): UserRole {
   return 'reviewer';
 }
 
+const LAST_ORG_KEY = 'thermal-last-organization-id';
+
+function getLastOrganizationId(): string | null {
+  try {
+    return localStorage.getItem(LAST_ORG_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveLastOrganizationId(organizationId: string): void {
+  try {
+    localStorage.setItem(LAST_ORG_KEY, organizationId);
+  } catch {
+    // ignore — non-fatal if storage is unavailable
+  }
+}
+
+/** Picks which membership to sign into: the last one the user actively
+ * selected (persisted across reloads), falling back to the first membership
+ * when there's no saved preference or it's no longer valid. */
+function pickMembership(memberships: CloudMembership[]): CloudMembership | undefined {
+  const lastId = getLastOrganizationId();
+  const remembered = lastId ? memberships.find((m) => m.organizationId === lastId) : undefined;
+  return remembered ?? memberships[0];
+}
+
 export interface CloudMembership {
   organizationId: string;
   organizationName: string;
@@ -130,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .maybeSingle();
           setIsPlatformOwner(!!platformAccess);
           const memberships = await getCloudMemberships(data.session.user.id);
-          const membership = memberships[0];
+          const membership = pickMembership(memberships);
           if (!membership) {
             setInitialising(false);
             return;
@@ -272,7 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: false, reason: 'invalid_credentials' };
       }
       const memberships = await getCloudMemberships(data.user.id);
-      const membership = memberships[0];
+      const membership = pickMembership(memberships);
       if (!membership) {
         await getSupabaseClient().auth.signOut();
         return { ok: false, reason: 'account_inactive' };
@@ -393,6 +420,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!membership) {
       throw new Error('You are not a member of that organization.');
     }
+    saveLastOrganizationId(membership.organizationId);
     setSession((current) => current
       ? {
           ...current,

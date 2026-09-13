@@ -1,12 +1,31 @@
+import type { ReactNode } from 'react';
 import { AuthProvider, useAuth } from './store/AuthContext';
 import { AuditProvider } from './store/AuditContext';
-import { ReportProvider } from './store/ReportContext';
+import { ReportProvider, useReport } from './store/ReportContext';
 import { AnalysisProvider } from './store/AnalysisContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PrintRoute } from './print/PrintRoute';
 import { ThemeProvider } from './store/ThemeContext';
+
+// Sensor CSV data is scoped per-document — this bridges the currently open
+// document's id (from ReportContext) into AnalysisProvider so uploads are
+// saved/loaded against that document instead of being shared globally.
+function DocumentScopedAnalysisProvider({
+  organizationId,
+  children,
+}: {
+  organizationId?: string;
+  children: ReactNode;
+}) {
+  const { report } = useReport();
+  return (
+    <AnalysisProvider organizationId={organizationId} documentId={report?.id}>
+      {children}
+    </AnalysisProvider>
+  );
+}
 
 // ── Auth-gated main app ───────────────────────────────────────────────────
 function AuthGatedApp() {
@@ -31,9 +50,9 @@ function AuthGatedApp() {
     // logged without needing an open document.
     <AuditProvider>
       <ReportProvider key={session.organizationId ?? 'local'} organizationId={session.organizationId} userId={session.userId}>
-        <AnalysisProvider>
+        <DocumentScopedAnalysisProvider organizationId={session.organizationId}>
           <AppLayout />
-        </AnalysisProvider>
+        </DocumentScopedAnalysisProvider>
       </ReportProvider>
     </AuditProvider>
   );
