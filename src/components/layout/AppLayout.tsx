@@ -357,7 +357,12 @@ export function AppLayout() {
 
     const openPrintFallback = () => {
       const jobId = crypto.randomUUID();
-      sessionStorage.setItem(`thermal-print-job:${jobId}`, JSON.stringify({ report, sensors }));
+      // Use localStorage (not sessionStorage) — it's shared across tabs for
+      // the same origin regardless of how/when the print tab was opened,
+      // whereas a tab opened via window.open('about:blank') and then
+      // navigated to our origin doesn't reliably inherit this tab's
+      // sessionStorage in every browser.
+      localStorage.setItem(`thermal-print-job:${jobId}`, JSON.stringify({ report, sensors, savedAt: Date.now() }));
       const printUrl = `${window.location.origin}/print/${jobId}?autoPrint=1`;
       if (fallbackWindow && !fallbackWindow.closed) {
         fallbackWindow.location.href = printUrl;

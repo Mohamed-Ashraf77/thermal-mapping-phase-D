@@ -11,7 +11,10 @@ function isPrintAutoOpen(): boolean {
 
 function getJobFromSessionStorage(jobId: string): { report: ReportDocument; sensors: SensorData[] } | null {
   try {
-    const raw = sessionStorage.getItem(`thermal-print-job:${jobId}`);
+    // Stored in localStorage by AppLayout's print fallback (see comment
+    // there) so it's visible to the newly opened tab regardless of when it
+    // navigated to our origin.
+    const raw = localStorage.getItem(`thermal-print-job:${jobId}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { report?: ReportDocument; sensors?: SensorData[] };
     if (!parsed.report) return null;
@@ -85,13 +88,14 @@ export function PrintRoute({ jobId }: { jobId: string }) {
 
         // Non-JSON (e.g. a static-host SPA rewrite serving index.html) or a
         // non-OK response both mean there's no real print-job backend or the
-        // job wasn't found — fall back to the client-side session copy used
+        // job wasn't found — fall back to the client-side local copy used
         // by the "open print dialog" fallback path.
         const fallback = getJobFromSessionStorage(jobId);
         if (!fallback) {
           throw new Error(`Print job not found or expired (HTTP ${res.status}).`);
         }
         if (!cancelled) setData(fallback);
+        localStorage.removeItem(`thermal-print-job:${jobId}`);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load print job.');
