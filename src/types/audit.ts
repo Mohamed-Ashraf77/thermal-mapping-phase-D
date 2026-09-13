@@ -61,6 +61,7 @@ export type ApprovalAction =
 /** Output / export events */
 export type OutputAction =
   | 'PDF_GENERATED'
+  | 'PDF_PRINT_FALLBACK'
   | 'RAW_CSV_EXPORTED'
   | 'AUDIT_TRAIL_EXPORTED';
 
@@ -123,6 +124,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   ADDENDUM_CREATED: 'Addendum created',
   // Output
   PDF_GENERATED: 'PDF report generated',
+  PDF_PRINT_FALLBACK: 'PDF fallback to print dialog',
   RAW_CSV_EXPORTED: 'Raw data CSV exported',
   AUDIT_TRAIL_EXPORTED: 'Audit trail exported',
   // System
@@ -171,6 +173,7 @@ export const AUDIT_ACTION_SEVERITY: Record<AuditAction, AuditSeverity> = {
   DATALOGGER_PLACED: 'low',
   DATALOGGER_REMOVED: 'low',
   PDF_GENERATED: 'medium',
+  PDF_PRINT_FALLBACK: 'medium',
   RAW_CSV_EXPORTED: 'medium',
   AUDIT_TRAIL_EXPORTED: 'high',
   SYSTEM_STARTUP: 'low',

@@ -5,6 +5,22 @@ import { ReportPreview } from '../components/report/ReportPreview';
 import type { ReportDocument } from '../types/report';
 import type { SensorData } from '../lib/analysis';
 
+function isPrintAutoOpen(): boolean {
+  return new URLSearchParams(window.location.search).get('autoPrint') === '1';
+}
+
+function getJobFromSessionStorage(jobId: string): { report: ReportDocument; sensors: SensorData[] } | null {
+  try {
+    const raw = sessionStorage.getItem(`thermal-print-job:${jobId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { report?: ReportDocument; sensors?: SensorData[] };
+    if (!parsed.report) return null;
+    return { report: parsed.report, sensors: parsed.sensors ?? [] };
+  } catch {
+    return null;
+  }
+}
+
 function ReadySignal() {
   const [ready, setReady] = useState(false);
 
@@ -34,6 +50,14 @@ function ReadySignal() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isPrintAutoOpen()) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   if (!ready) return null;
   // Presence of this element (any visibility) is the signal Puppeteer waits
   // for via page.waitForSelector('[data-report-ready="true"]').
@@ -46,17 +70,31 @@ export function PrintRoute({ jobId }: { jobId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/print-jobs/${jobId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Print job not found or expired (HTTP ${res.status}).`);
-        return res.json();
-      })
-      .then((json) => {
-        if (!cancelled) setData({ report: json.report as ReportDocument, sensors: (json.sensors ?? []) as SensorData[] });
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load print job.');
-      });
+
+    async function loadJob() {
+      try {
+        const res = await fetch(`/api/print-jobs/${jobId}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (!cancelled) {
+            setData({ report: json.report as ReportDocument, sensors: (json.sensors ?? []) as SensorData[] });
+          }
+          return;
+        }
+
+        const fallback = getJobFromSessionStorage(jobId);
+        if (!fallback) {
+          throw new Error(`Print job not found or expired (HTTP ${res.status}).`);
+        }
+        if (!cancelled) setData(fallback);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load print job.');
+        }
+      }
+    }
+
+    void loadJob();
     return () => {
       cancelled = true;
     };

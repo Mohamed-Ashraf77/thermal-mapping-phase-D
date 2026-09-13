@@ -61,20 +61,20 @@ export function computeTestDataRows(
       }
       const stats = statsFor(sensor);
       const mkt = mktFor(sensor);
+      const hasHumidity = sensor.hasHumidity !== false;
       const pass =
         stats.maxTemp <= limits.temperatureMaxC &&
         stats.minTemp >= limits.temperatureMinC &&
-        stats.maxHum <= limits.humidityMaxPct &&
-        stats.minHum >= limits.humidityMinPct;
+        (!hasHumidity || (stats.maxHum! <= limits.humidityMaxPct && stats.minHum! >= limits.humidityMinPct));
       return {
         position,
         sensor,
         avgT: stats.avgTemp,
-        avgH: stats.avgHum,
+        avgH: stats.avgHum ?? NaN,
         maxT: stats.maxTemp,
-        maxH: stats.maxHum,
+        maxH: stats.maxHum ?? NaN,
         minT: stats.minTemp,
-        minH: stats.minHum,
+        minH: stats.minHum ?? NaN,
         mkt,
         pass,
       };

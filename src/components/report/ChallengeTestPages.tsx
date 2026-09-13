@@ -22,6 +22,7 @@ interface ChallengeRow {
   humOutOfSpec: boolean;
   humExcursionMin: number;
   humRecoveryMin: number | null;
+  hasHumidity: boolean;
 }
 
 function combineDateTime(date: string, time: string): number | null {
@@ -56,11 +57,15 @@ export function computeChallengeRows(
           humOutOfSpec: false,
           humExcursionMin: 0,
           humRecoveryMin: null,
+          hasHumidity: sensor?.hasHumidity !== false,
         };
       }
       const windowRows = sensor.rows.filter((r) => r.datetime >= startMs && r.datetime <= endMs);
+      const hasHumidity = sensor.hasHumidity !== false;
       const tempResult = computeRecoveryMetric(windowRows, (r) => r.temp, limits.temperatureMinC, limits.temperatureMaxC);
-      const humResult = computeRecoveryMetric(windowRows, (r) => r.humidity, limits.humidityMinPct, limits.humidityMaxPct);
+      const humResult = hasHumidity
+        ? computeRecoveryMetric(windowRows, (r) => r.humidity, limits.humidityMinPct, limits.humidityMaxPct)
+        : { outOfSpec: false, excursionDurationMinutes: 0, recoveryMinutes: null };
       return {
         position,
         sensor,
@@ -70,6 +75,7 @@ export function computeChallengeRows(
         humOutOfSpec: humResult.outOfSpec,
         humExcursionMin: humResult.excursionDurationMinutes,
         humRecoveryMin: humResult.recoveryMinutes,
+        hasHumidity,
       };
     });
 }
@@ -142,7 +148,7 @@ function ChallengeTable({ rows }: { rows: ChallengeRow[] }) {
                 {recoveryLabel(row.tempRecoveryMin, row.tempOutOfSpec)}
               </td>
               <td className="border border-slate-300 px-1.5 py-1 text-center">
-                {!row.sensor ? (
+                {!row.sensor || !row.hasHumidity ? (
                   <span className="text-slate-400">N/A</span>
                 ) : row.humOutOfSpec ? (
                   <span className="text-rose-600">YES</span>
@@ -151,10 +157,10 @@ function ChallengeTable({ rows }: { rows: ChallengeRow[] }) {
                 )}
               </td>
               <td className="border border-slate-300 px-1.5 py-1 text-right">
-                {row.humOutOfSpec ? formatDurationMinutes(row.humExcursionMin) : '—'}
+                {row.hasHumidity && row.humOutOfSpec ? formatDurationMinutes(row.humExcursionMin) : '—'}
               </td>
               <td className="border border-slate-300 px-1.5 py-1 text-right">
-                {recoveryLabel(row.humRecoveryMin, row.humOutOfSpec)}
+                {row.hasHumidity ? recoveryLabel(row.humRecoveryMin, row.humOutOfSpec) : '—'}
               </td>
             </tr>
           ))

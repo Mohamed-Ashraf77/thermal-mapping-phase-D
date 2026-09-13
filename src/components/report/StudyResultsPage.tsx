@@ -10,8 +10,8 @@ type ResultRow = {
   sensor: SensorData;
   minTemp: number;
   maxTemp: number;
-  minHum: number;
-  maxHum: number;
+  minHum: number | null;
+  maxHum: number | null;
   mkt: number;
 };
 
@@ -21,8 +21,8 @@ function toEpoch(value: string): number | null {
   return Number.isNaN(result) ? null : result;
 }
 
-function formatNumber(value: number): string {
-  return Number.isFinite(value) ? value.toFixed(1) : '—';
+function formatNumber(value: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(1) : '—';
 }
 
 function locationLabel(row: ResultRow | undefined): string {
@@ -60,8 +60,9 @@ export function StudyResultsPage(props: { pageNumber: number; totalPages: number
 
   const hottest = rows.reduce((best, row) => !best || row.maxTemp > best.maxTemp ? row : best, undefined as ResultRow | undefined);
   const coldest = rows.reduce((best, row) => !best || row.minTemp < best.minTemp ? row : best, undefined as ResultRow | undefined);
-  const highestHumidity = rows.reduce((best, row) => !best || row.maxHum > best.maxHum ? row : best, undefined as ResultRow | undefined);
-  const lowestHumidity = rows.reduce((best, row) => !best || row.minHum < best.minHum ? row : best, undefined as ResultRow | undefined);
+  const humidityRows = rows.filter((row) => row.maxHum !== null && row.minHum !== null);
+  const highestHumidity = humidityRows.reduce((best, row) => !best || row.maxHum! > best.maxHum! ? row : best, undefined as ResultRow | undefined);
+  const lowestHumidity = humidityRows.reduce((best, row) => !best || row.minHum! < best.minHum! ? row : best, undefined as ResultRow | undefined);
 
   return (
     <ReportPageFrame pageNumber={props.pageNumber} totalPages={props.totalPages}>
@@ -76,8 +77,8 @@ export function StudyResultsPage(props: { pageNumber: number; totalPages: number
       <div className="mb-5 grid grid-cols-2 gap-2 text-[9px]">
         <div className="rounded border border-slate-200 p-2"><span className="font-semibold">Hottest location:</span> {locationLabel(hottest)} — {formatNumber(hottest?.maxTemp ?? NaN)} °C</div>
         <div className="rounded border border-slate-200 p-2"><span className="font-semibold">Coldest location:</span> {locationLabel(coldest)} — {formatNumber(coldest?.minTemp ?? NaN)} °C</div>
-        <div className="rounded border border-slate-200 p-2"><span className="font-semibold">Highest RH location:</span> {locationLabel(highestHumidity)} — {formatNumber(highestHumidity?.maxHum ?? NaN)} %RH</div>
-        <div className="rounded border border-slate-200 p-2"><span className="font-semibold">Lowest RH location:</span> {locationLabel(lowestHumidity)} — {formatNumber(lowestHumidity?.minHum ?? NaN)} %RH</div>
+        <div className="rounded border border-slate-200 p-2"><span className="font-semibold">Highest RH location:</span> {humidityRows.length === 0 ? 'No humidity sensors in this study' : `${locationLabel(highestHumidity)} — ${formatNumber(highestHumidity?.maxHum ?? null)} %RH`}</div>
+        <div className="rounded border border-slate-200 p-2"><span className="font-semibold">Lowest RH location:</span> {humidityRows.length === 0 ? 'No humidity sensors in this study' : `${locationLabel(lowestHumidity)} — ${formatNumber(lowestHumidity?.minHum ?? null)} %RH`}</div>
       </div>
 
       {rows.length === 0 ? (

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { SensorData } from '../lib/analysis';
-import { parseSensorCsv } from '../lib/analysis';
+import { parseSensorCsvMulti } from '../lib/analysis';
 import { idbClear, idbDelete, idbGetAll, idbPut, isIndexedDbAvailable } from '../lib/idbStore';
 
 interface AnalysisContextValue {
@@ -60,27 +60,29 @@ export function AnalysisProvider({
 
   const addFiles = useCallback(async (files: FileList | File[]) => {
     const fileArray = Array.from(files).filter((f) => /\.csv$/i.test(f.name));
-    const parsed = await Promise.all(
+    const parsedArrays = await Promise.all(
       fileArray.map(
         (file) =>
-          new Promise<SensorData>((resolve) => {
+          new Promise<SensorData[]>((resolve) => {
             const reader = new FileReader();
-            reader.onload = () => resolve(parseSensorCsv(file.name, String(reader.result ?? '')));
+            reader.onload = () => resolve(parseSensorCsvMulti(file.name, String(reader.result ?? '')));
             reader.onerror = () =>
-              resolve({ id: file.name.replace(/\.csv$/i, ''), rows: [], error: 'Could not read file.' });
+              resolve([{ id: file.name.replace(/\.csv$/i, ''), rows: [], error: 'Could not read file.' }]);
             reader.readAsText(file);
           }),
       ),
     );
 
+    const allParsed = parsedArrays.flat();
+
     setSensors((prev) => {
       const byId = new Map(prev.map((s) => [s.id, s]));
-      parsed.forEach((s) => byId.set(s.id, s));
+      allParsed.forEach((s) => byId.set(s.id, s));
       return Array.from(byId.values());
     });
 
     if (persist && isIndexedDbAvailable()) {
-      await Promise.all(parsed.map((s) => idbPut(s))).catch(() => {
+      await Promise.all(allParsed.map((s) => idbPut(s))).catch(() => {
         // Non-fatal — the in-memory state above still has the data for
         // this session even if persisting it failed.
       });

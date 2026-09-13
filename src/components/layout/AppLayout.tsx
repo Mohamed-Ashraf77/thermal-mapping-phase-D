@@ -342,13 +342,31 @@ export function AppLayout() {
     if (!report) return;
     setPdfState('generating');
     setPdfError(null);
+
+    const openPrintFallback = () => {
+      const jobId = crypto.randomUUID();
+      sessionStorage.setItem(`thermal-print-job:${jobId}`, JSON.stringify({ report, sensors }));
+      const printUrl = `${window.location.origin}/print/${jobId}?autoPrint=1`;
+      const popup = window.open(printUrl, '_blank', 'noopener,noreferrer');
+      if (!popup) {
+        setPdfState('error');
+        setPdfError('Please allow pop-ups so the report can open in a print-friendly window.');
+        return false;
+      }
+      setPdfState('idle');
+      return true;
+    };
+
     try {
       const createRes = await fetch('/api/print-jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ report, sensors }),
       });
-      if (!createRes.ok) throw new Error('Could not prepare the report data for PDF export.');
+      if (!createRes.ok) {
+        openPrintFallback();
+        return;
+      }
       const { id } = (await createRes.json()) as { id: string };
       const pdfRes = await fetch(`/api/generate-pdf/${id}`, { method: 'POST' });
       if (!pdfRes.ok) {
@@ -375,12 +393,21 @@ export function AppLayout() {
       const message = err instanceof Error ? err.message : 'PDF generation failed.';
       setPdfState('error');
       setPdfError(message);
+      const didOpenFallback = openPrintFallback();
+      if (!didOpenFallback) {
+        await log({
+          action: 'PDF_GENERATED',
+          documentId: report?.id,
+          detail: message,
+          outcome: 'failure',
+          failureReason: message,
+        });
+        return;
+      }
       await log({
-        action: 'PDF_GENERATED',
+        action: 'PDF_PRINT_FALLBACK',
         documentId: report?.id,
-        detail: message,
-        outcome: 'failure',
-        failureReason: message,
+        detail: `Opened print-friendly fallback after PDF error: ${message}`,
       });
     }
   }

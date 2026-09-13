@@ -17,19 +17,28 @@ export interface SensorReading {
 
 export interface SensorData {
   /** Stable identifier for the sensor — by convention the CSV file name
-   * without extension, expected to match a datalogger's serial number. */
+   * without extension, expected to match a datalogger's serial number.
+   * For Multicon files each channel gets its own id: "<base>_A<n>". */
   id: string;
   rows: SensorReading[];
   error?: string;
+  /** Which device format was detected for this file. */
+  format?: 'logtag' | 'tempnote' | 'multicon' | 'unknown';
+  /** False for temperature-only dataloggers (e.g. Multicon oven/chamber
+   * probes) that have no real humidity channel. When false, `humidity` on
+   * each reading is a meaningless placeholder (0) and must be excluded from
+   * all humidity stats, pass/fail checks, and "worst RH location" summaries. */
+  hasHumidity?: boolean;
 }
 
 export interface SensorStats {
   maxTemp: number;
   minTemp: number;
   avgTemp: number;
-  maxHum: number;
-  minHum: number;
-  avgHum: number;
+  /** null when the sensor has no real humidity channel (see SensorData.hasHumidity). */
+  maxHum: number | null;
+  minHum: number | null;
+  avgHum: number | null;
   count: number;
 }
 
@@ -79,41 +88,146 @@ export function parseDateTime(dateStr: string, timeStr: string): number | null {
   return new Date(year, month - 1, day, hh, mm, 0).getTime();
 }
 
-/** Parses one datalogger CSV export into sorted sensor readings. Throws a
- * descriptive Error on unrecoverable format problems (no header found, no
- * valid rows) so the caller can surface it per-file.
- */
-export function parseSensorCsv(fileName: string, text: string): SensorData {
-  const id = fileName.replace(/\.csv$/i, '');
-  const lines = text.split(/\r?\n/);
+// ---------------------------------------------------------------------------
+// Format detection
+// ---------------------------------------------------------------------------
 
+export type DeviceFormat = 'logtag' | 'tempnote' | 'multicon' | 'unknown';
+
+/**
+ * Detects which device format produced the CSV text.
+ *
+ * Rules (checked in order):
+ *  1. Multicon  — first non-empty line starts with "No." and header
+ *                 contains "Date and time" and "Inp."
+ *  2. TempNote  — text contains "Device Type:" or "Tempnote" or
+ *                 a line matching "Date,Time,Temperature(C)"
+ *  3. LogTag    — first non-empty line starts with a number (index),
+ *                 then a date in MM/DD/YYYY format
+ *  4. unknown   — anything else (will fall back to the original LogTag parser)
+ */
+export function detectFormat(text: string): DeviceFormat {
+  const clean = text.replace(/^\uFEFF/, '');
+  const firstLines = clean.split(/\r?\n/).slice(0, 5).map((l) => l.trim());
+
+  // Multicon: header has "No." + "Date and time" + "Inp."
+  const header0 = firstLines[0] || '';
+  if (
+    /^No\./i.test(header0) &&
+    /Date and time/i.test(header0) &&
+    /Inp\./i.test(header0)
+  ) {
+    return 'multicon';
+  }
+
+  // TempNote: metadata block present
+  if (
+    /Device Type:/i.test(clean) ||
+    /Tempnote/i.test(clean) ||
+    /Temperature\(C\)/i.test(clean)
+  ) {
+    return 'tempnote';
+  }
+
+  // LogTag: first data line is  <number>,<MM/DD/YYYY>,<HH:MM:SS>,...
+  const firstData = firstLines.find((l) => l.length > 0) || '';
+  if (/^\d+,\d{1,2}\/\d{1,2}\/\d{4},\d{2}:\d{2}:\d{2}/.test(firstData)) {
+    return 'logtag';
+  }
+
+  return 'unknown';
+}
+
+// ---------------------------------------------------------------------------
+// LogTag parser
+// ---------------------------------------------------------------------------
+
+/**
+ * LogTag CSV: no header, every line is data.
+ * Columns: index, MM/DD/YYYY, HH:MM:SS, temperature, humidity [, optional note]
+ *
+ * Example:
+ *   1,09/08/2026,15:36:48,25.1,68.1,
+ *   4,09/08/2026,15:42:48,24.2,73.6, Inspection Mark
+ */
+function parseLogTagCsv(id: string, lines: string[]): SensorData {
+  const rows: SensorReading[] = [];
+
+  for (const raw of lines) {
+    const clean = raw.replace(/^\uFEFF/, '');
+    if (clean.trim() === '') continue;
+    const parts = clean.split(',');
+    // Expect at least 5 columns: index, date, time, temp, humidity
+    if (parts.length < 5) continue;
+
+    const dateStr = (parts[1] || '').trim();
+    const timeStr = (parts[2] || '').trim();
+    const tempStr = (parts[3] || '').trim();
+    const humStr  = (parts[4] || '').trim();
+
+    if (!dateStr || !timeStr || tempStr === '' || humStr === '') continue;
+
+    const dt = parseDateTime(dateStr, timeStr);
+    if (dt === null) continue;
+    const temp = parseFloat(tempStr);
+    const humidity = parseFloat(humStr);
+    if (Number.isNaN(temp) || Number.isNaN(humidity)) continue;
+
+    rows.push({ datetime: dt, temp, humidity });
+  }
+
+  if (rows.length === 0) {
+    return { id, rows: [], error: 'LogTag: no valid data rows found.', format: 'logtag' };
+  }
+  rows.sort((a, b) => a.datetime - b.datetime);
+  return { id, rows, format: 'logtag' };
+}
+
+// ---------------------------------------------------------------------------
+// TempNote parser
+// ---------------------------------------------------------------------------
+
+/**
+ * TempNote CSV: long metadata header, then a data section starting with:
+ *   Date,Time,Temperature(C),Humidity(%RH)
+ *   ******...
+ *   MM/DD/YYYY, HH:MM:SS, temp, hum
+ *
+ * The parser skips everything before the "Date,Time,..." header row and
+ * the optional "***..." separator that follows it.
+ */
+function parseTempNoteCsv(id: string, lines: string[]): SensorData {
   let headerIdx = -1;
-  for (let i = 0; i < lines.length; i += 1) {
+  for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].replace(/^\uFEFF/, '').trim();
-    if (/^date,/i.test(trimmed) || trimmed.toLowerCase() === 'date,time,temperature(c),humidity(%rh)') {
+    if (/^date,\s*time/i.test(trimmed)) {
       headerIdx = i;
       break;
     }
   }
+
   if (headerIdx === -1) {
-    return { id, rows: [], error: "Header row starting with 'Date' not found." };
+    return { id, rows: [], error: 'TempNote: data header row not found.', format: 'tempnote' };
   }
 
   let dataStart = headerIdx + 1;
+  // Skip optional *** separator line
   if (dataStart < lines.length && /^\*+/.test(lines[dataStart].trim())) {
     dataStart += 1;
   }
 
   const rows: SensorReading[] = [];
-  for (let j = dataStart; j < lines.length; j += 1) {
+  for (let j = dataStart; j < lines.length; j++) {
     const raw = lines[j].replace(/^\uFEFF/, '');
     if (raw.trim() === '') continue;
     const parts = raw.split(',');
     if (parts.length < 4) continue;
+
     const dateStr = (parts[0] || '').trim();
     const timeStr = (parts[1] || '').trim();
     const tempStr = (parts[2] || '').trim();
-    const humStr = (parts[3] || '').trim();
+    const humStr  = (parts[3] || '').trim();
+
     if (!dateStr || !timeStr || tempStr === '' || humStr === '') continue;
     if (/^\*+/.test(dateStr)) continue;
 
@@ -127,10 +241,245 @@ export function parseSensorCsv(fileName: string, text: string): SensorData {
   }
 
   if (rows.length === 0) {
-    return { id, rows: [], error: 'No valid data rows found after header.' };
+    return { id, rows: [], error: 'TempNote: no valid data rows found after header.', format: 'tempnote' };
   }
   rows.sort((a, b) => a.datetime - b.datetime);
-  return { id, rows };
+  return { id, rows, format: 'tempnote' };
+}
+
+// ---------------------------------------------------------------------------
+// Multicon parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Extracts the recording start datetime from a Multicon filename.
+ *
+ * Expected pattern anywhere in the filename:
+ *   YYYYMMDD_HHmmSS   (e.g. 20260901_120100)
+ *
+ * Returns epoch ms, or null if the pattern is not found.
+ */
+function extractMulticonStartTime(fileName: string): number | null {
+  // Match YYYYMMDD_HHmmSS — 8 digits, underscore, 6 digits
+  const m = fileName.match(/(\d{8})_(\d{6})/);
+  if (!m) return null;
+
+  const dateStr = m[1]; // YYYYMMDD
+  const timeStr = m[2]; // HHmmSS
+
+  const year   = parseInt(dateStr.slice(0, 4), 10);
+  const month  = parseInt(dateStr.slice(4, 6), 10) - 1; // 0-indexed
+  const day    = parseInt(dateStr.slice(6, 8), 10);
+  const hour   = parseInt(timeStr.slice(0, 2), 10);
+  const minute = parseInt(timeStr.slice(2, 4), 10);
+  const second = parseInt(timeStr.slice(4, 6), 10);
+
+  const dt = new Date(year, month, day, hour, minute, second);
+  return isNaN(dt.getTime()) ? null : dt.getTime();
+}
+
+/**
+ * Parses the Multicon "Date and time" cell.
+ *
+ * The cell contains elapsed time since recording start in one of these forms:
+ *   MM:SS.s      e.g. "41:08.4"   → 41 min 8.4 s
+ *   HH:MM:SS     e.g. "01:30:00"  → 1 h 30 min 0 s  (three colon-parts)
+ *
+ * Returns elapsed milliseconds, or null on parse failure.
+ */
+function parseMulticonElapsed(cell: string): number | null {
+  const c = cell.trim();
+
+  // Three-part: HH:MM:SS or HH:MM:SS.s
+  const three = c.match(/^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/);
+  if (three) {
+    const h = parseInt(three[1], 10);
+    const m = parseInt(three[2], 10);
+    const s = parseFloat(three[3]);
+    return (h * 3600 + m * 60 + s) * 1000;
+  }
+
+  // Two-part: MM:SS or MM:SS.s  (the common Multicon format)
+  const two = c.match(/^(\d+):(\d{2}(?:\.\d+)?)$/);
+  if (two) {
+    const m = parseInt(two[1], 10);
+    const s = parseFloat(two[2]);
+    return (m * 60 + s) * 1000;
+  }
+
+  return null;
+}
+
+/**
+ * Multicon CSV: one header row, then N data rows.
+ * Columns: No., "Date and time", Inp.A1[°C], Inp.A2[°C], ..., Inp.AN[°C]
+ *
+ * Produces one SensorData per channel. Channel count is dynamic — whatever
+ * the header says is present will be parsed. Humidity is set to 0 because
+ * Multicon records temperature only.
+ *
+ * The real start datetime is extracted from the filename using
+ * extractMulticonStartTime(). If the filename doesn't contain a timestamp
+ * the rows will still be produced but with relative epoch offsets from 0
+ * (and a warning in the error field of the first channel).
+ *
+ * @returns Array of SensorData — one per channel found in the header.
+ */
+function parseMulticonCsv(fileName: string, lines: string[]): SensorData[] {
+  const baseName = fileName.replace(/\.csv$/i, '');
+
+  // Find the header line (first non-empty line starting with "No.")
+  let headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].replace(/^\uFEFF/, '').trim();
+    if (/^No\./i.test(trimmed)) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) {
+    return [{
+      id: baseName,
+      rows: [],
+      error: 'Multicon: header row (No., Date and time, ...) not found.',
+      format: 'multicon',
+    }];
+  }
+
+  // Parse header to find channel names and their column indices
+  const headerParts = lines[headerIdx]
+    .replace(/^\uFEFF/, '')
+    .split(',')
+    .map((p) => p.trim());
+
+  // Channels are all columns after "No." (col 0) and "Date and time" (col 1)
+  // They may be labeled "Inp. A1  [°C] (1)" or similar — extract the channel
+  // label as-is for the id suffix.
+  interface ChannelDef {
+    colIdx: number;   // column index in the CSV row
+    label: string;    // e.g. "A1", "A2", … derived from header cell
+  }
+
+  const channels: ChannelDef[] = [];
+  for (let c = 2; c < headerParts.length; c++) {
+    const cell = headerParts[c];
+    if (!cell) continue;
+    // Try to extract "A<n>" from patterns like "Inp. A1  [°C] (1)" or "A2"
+    const labelMatch = cell.match(/A(\d+)/i);
+    const label = labelMatch ? `A${labelMatch[1]}` : `CH${c - 1}`;
+    channels.push({ colIdx: c, label });
+  }
+
+  if (channels.length === 0) {
+    return [{
+      id: baseName,
+      rows: [],
+      error: 'Multicon: no channel columns found in header.',
+      format: 'multicon',
+    }];
+  }
+
+  // Extract start time from filename
+  const startMs = extractMulticonStartTime(fileName);
+  const noTimestamp = startMs === null;
+
+  // Build a rows array per channel
+  const channelRows: SensorReading[][] = channels.map(() => []);
+
+  for (let j = headerIdx + 1; j < lines.length; j++) {
+    const raw = lines[j].replace(/^\uFEFF/, '');
+    if (raw.trim() === '') continue;
+    const parts = raw.split(',');
+    if (parts.length < 3) continue;
+
+    // Column 1 is elapsed time
+    const elapsedMs = parseMulticonElapsed(parts[1] || '');
+    if (elapsedMs === null) continue;
+
+    const absoluteMs = noTimestamp ? elapsedMs : (startMs! + elapsedMs);
+
+    for (let ch = 0; ch < channels.length; ch++) {
+      const { colIdx } = channels[ch];
+      const tempStr = (parts[colIdx] || '').trim();
+      if (tempStr === '') continue;
+      const temp = parseFloat(tempStr);
+      if (Number.isNaN(temp)) continue;
+      channelRows[ch].push({ datetime: absoluteMs, temp, humidity: 0 });
+    }
+  }
+
+  // Build one SensorData per channel
+  return channels.map((ch, idx) => {
+    const rows = channelRows[idx];
+    rows.sort((a, b) => a.datetime - b.datetime);
+    const sensorId = `${baseName}_${ch.label}`;
+    const base: SensorData = {
+      id: sensorId,
+      rows,
+      format: 'multicon',
+      hasHumidity: false,
+    };
+    if (rows.length === 0) {
+      base.error = `Multicon channel ${ch.label}: no valid data rows.`;
+    }
+    if (noTimestamp) {
+      base.error = (base.error ? base.error + ' ' : '') +
+        'Warning: start datetime not found in filename — timestamps are relative to recording start.';
+    }
+    return base;
+  });
+}
+
+/** Parses one datalogger CSV export into sorted sensor readings. Throws a
+ * descriptive Error on unrecoverable format problems (no header found, no
+ * valid rows) so the caller can surface it per-file.
+ */
+// ---------------------------------------------------------------------------
+// Public entry point — auto-detects format and dispatches
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses one datalogger CSV export into one or more SensorData objects.
+ *
+ * • LogTag / TempNote → returns a single-element array.
+ * • Multicon          → returns one element per channel (N ≥ 1).
+ * • Unknown format    → falls back to the original LogTag-style parser
+ *                       for backwards compatibility.
+ *
+ * Replaces the old single-return `parseSensorCsv()`. The AnalysisContext
+ * should call this and spread the returned array into its sensor list.
+ */
+export function parseSensorCsvMulti(fileName: string, text: string): SensorData[] {
+  const format = detectFormat(text);
+  const lines = text.split(/\r?\n/);
+  const baseName = fileName.replace(/\.csv$/i, '');
+
+  switch (format) {
+    case 'logtag':
+      return [parseLogTagCsv(baseName, lines)];
+
+    case 'tempnote':
+      return [parseTempNoteCsv(baseName, lines)];
+
+    case 'multicon':
+      return parseMulticonCsv(fileName, lines);
+
+    default:
+      // Unknown: try original LogTag-style parser as fallback
+      return [parseLogTagCsv(baseName, lines)];
+  }
+}
+
+/**
+ * Single-sensor convenience wrapper — kept for backward compatibility with
+ * any existing code that calls `parseSensorCsv(fileName, text)`.
+ *
+ * For Multicon files this returns only the FIRST channel. Prefer
+ * `parseSensorCsvMulti` in new code so all channels are captured.
+ */
+export function parseSensorCsv(fileName: string, text: string): SensorData {
+  const results = parseSensorCsvMulti(fileName, text);
+  return results[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +488,7 @@ export function parseSensorCsv(fileName: string, text: string): SensorData {
 
 export function statsFor(sensor: SensorData): SensorStats {
   const n = sensor.rows.length;
+  const hasHumidity = sensor.hasHumidity !== false;
   let tSum = 0;
   let hSum = 0;
   let tMax = -Infinity;
@@ -148,19 +498,21 @@ export function statsFor(sensor: SensorData): SensorStats {
   for (let i = 0; i < n; i += 1) {
     const { temp: t, humidity: h } = sensor.rows[i];
     tSum += t;
-    hSum += h;
     if (t > tMax) tMax = t;
     if (t < tMin) tMin = t;
-    if (h > hMax) hMax = h;
-    if (h < hMin) hMin = h;
+    if (hasHumidity) {
+      hSum += h;
+      if (h > hMax) hMax = h;
+      if (h < hMin) hMin = h;
+    }
   }
   return {
     maxTemp: tMax,
     minTemp: tMin,
     avgTemp: n ? tSum / n : NaN,
-    maxHum: hMax,
-    minHum: hMin,
-    avgHum: n ? hSum / n : NaN,
+    maxHum: hasHumidity ? hMax : null,
+    minHum: hasHumidity ? hMin : null,
+    avgHum: hasHumidity && n ? hSum / n : null,
     count: n,
   };
 }
@@ -305,7 +657,7 @@ export function filterByRange(sensors: SensorData[], startMs: number | null, end
       if (endMs !== null && r.datetime > endMs) return false;
       return true;
     });
-    return { id: s.id, rows, error: undefined };
+    return { id: s.id, rows, error: undefined, format: s.format, hasHumidity: s.hasHumidity };
   });
 }
 
