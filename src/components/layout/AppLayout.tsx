@@ -321,6 +321,7 @@ export function AppLayout() {
   const [activeSection, setActiveSection] = useState<SectionId>('home');
   const [pdfState, setPdfState] = useState<'idle' | 'generating' | 'error'>('idle');
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfFallbackUrl, setPdfFallbackUrl] = useState<string | null>(null);
 
   // When the user opens a document, switch to document-info section automatically
   const handleOpenDocument = useCallback((id: string | null) => {
@@ -342,11 +343,17 @@ export function AppLayout() {
     if (!report) return;
     setPdfState('generating');
     setPdfError(null);
+    setPdfFallbackUrl(null);
 
     // Open the tab synchronously, in direct response to the click, so
     // browsers don't treat it as an unsolicited pop-up (any `await` before
     // window.open() breaks the "user gesture" chain and gets blocked).
-    const fallbackWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    // NOTE: `noopener`/`noreferrer` make window.open() return null even when
+    // the tab opens successfully (it strips the window reference), which
+    // made the fallback below think it was always blocked. Omit them here so
+    // we keep a real reference we can navigate once the fallback URL is
+    // ready; the tab still can't reach back into this window regardless.
+    const fallbackWindow = window.open('about:blank', '_blank');
 
     const openPrintFallback = () => {
       const jobId = crypto.randomUUID();
@@ -359,10 +366,11 @@ export function AppLayout() {
       }
       // The pre-opened tab was blocked or closed — try opening fresh as a
       // last resort (still likely to be blocked outside a user gesture).
-      const popup = window.open(printUrl, '_blank', 'noopener,noreferrer');
+      const popup = window.open(printUrl, '_blank');
       if (!popup) {
         setPdfState('error');
-        setPdfError('Please allow pop-ups so the report can open in a print-friendly window.');
+        setPdfError('Please allow pop-ups, or click the link below to open the print-friendly report.');
+        setPdfFallbackUrl(printUrl);
         return false;
       }
       setPdfState('idle');
@@ -666,6 +674,19 @@ export function AppLayout() {
         {pdfState === 'error' && pdfError && (
           <div className="shrink-0 border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs text-rose-700 print:hidden">
             {pdfError}
+            {pdfFallbackUrl && (
+              <>
+                {' '}
+                <a
+                  href={pdfFallbackUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-bold underline hover:text-rose-900"
+                >
+                  Open print view
+                </a>
+              </>
+            )}
           </div>
         )}
 
