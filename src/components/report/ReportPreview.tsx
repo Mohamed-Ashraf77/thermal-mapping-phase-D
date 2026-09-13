@@ -166,6 +166,7 @@ export function ReportPreview() {
     docReviewApproval: 3,
     introduction: 4,
     systemBrief: 5,
+    narrative: 6,
     stabilityChamberDesc: 7,
     layoutPositions: layoutPageNumber,
     testResults: layoutPageNumber,
