@@ -25,10 +25,7 @@ import {
   AddendumPage,
   FinalApprovalSecondPage,
 } from './AppendicesPages';
-import {
-  CriticalParametersCalibrationPage,
-  SignatureLogPage,
-} from './SignatureLogAndAuditPages';
+import { SignatureLogPage } from './SignatureLogAndAuditPages';
 import { useReport } from '../../store/ReportContext';
 import { useAnalysis } from '../../store/AnalysisContext';
 
@@ -70,8 +67,8 @@ export function ReportPreview() {
   const isProtocol = report.documentType === 'protocol';
 
   if (isProtocol) {
-    // Protocol mode has a fixed 36-page structure to match the template page-for-page!
-    const totalPages = 36;
+    // Protocol mode has a fixed 35-page structure to match the template page-for-page!
+    const totalPages = 35;
 
     return (
       <div id="report-print-root" className="light-surface flex flex-col items-center gap-8 bg-slate-100 py-8 print:bg-white print:py-0">
@@ -101,13 +98,12 @@ export function ReportPreview() {
         <CalibrationPages startPageNumber={26} totalPages={totalPages} />          {/* Page 26 & 27 (2 pages) */}
         <ChartsPlaceholderPage pageNumber={28} totalPages={totalPages} title="Calibration Certificates" /> {/* Page 28 */}
         <SopAvailabilityPage pageNumber={29} totalPages={totalPages} />             {/* Page 29 */}
-        <CriticalParametersCalibrationPage pageNumber={30} totalPages={totalPages} /> {/* Page 30 */}
-        <SignatureLogPage pageNumber={31} totalPages={totalPages} />                {/* Page 31 */}
-        <AddendumPage pageNumber={32} totalPages={totalPages} />                   {/* Page 32 */}
-        <DeviationsPage pageNumber={33} totalPages={totalPages} />                 {/* Page 33 */}
-        <AttachmentsListPage pageNumber={34} totalPages={totalPages} />             {/* Page 34 */}
-        <FinalApprovalPage pageNumber={35} totalPages={totalPages} />               {/* Page 35 */}
-        <FinalApprovalSecondPage pageNumber={36} totalPages={totalPages} />         {/* Page 36 */}
+        <SignatureLogPage pageNumber={30} totalPages={totalPages} />                {/* Page 30 */}
+        <AddendumPage pageNumber={31} totalPages={totalPages} />                   {/* Page 31 */}
+        <DeviationsPage pageNumber={32} totalPages={totalPages} />                 {/* Page 32 */}
+        <AttachmentsListPage pageNumber={33} totalPages={totalPages} />             {/* Page 33 */}
+        <FinalApprovalPage pageNumber={34} totalPages={totalPages} />               {/* Page 34 */}
+        <FinalApprovalSecondPage pageNumber={35} totalPages={totalPages} />         {/* Page 35 */}
       </div>
     );
   }
@@ -115,7 +111,7 @@ export function ReportPreview() {
   // Report Mode (Dynamic length as before)
   const FIXED_PAGES_BEFORE_LOADING = 7;
   const FIXED_PAGES_AFTER_LOADING = 2;
-  const FIXED_TRAILING_PAGES_REPORT = 7;
+  const FIXED_TRAILING_PAGES_REPORT = 6;
 
   const loadingPageCount = chunkLoadingItems(report.loadingItems).length;
   
@@ -150,8 +146,7 @@ export function ReportPreview() {
   const challengeStartPage = chartsStartPage + chartsPageCount;
   const calibrationStartPage = challengeStartPage + challengePageCount;
   const sopPageNumber = calibrationStartPage + calibrationPageCount;
-  const criticalParamsPageNumber = sopPageNumber + 1;
-  const signatureLogPageNumber = criticalParamsPageNumber + 1;
+  const signatureLogPageNumber = sopPageNumber + 1;
   const deviationsPageNumber = signatureLogPageNumber + 1;
   const attachmentsPageNumber = deviationsPageNumber + 1;
   const finalApprovalPageNumber = attachmentsPageNumber + 1;
@@ -171,8 +166,7 @@ export function ReportPreview() {
       <div className="mb-2 flex max-w-[210mm] items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 print:hidden">
         <span>
           Preview of all {totalPages} implemented report pages, front cover through final approval. The Signature
-          Log and Critical Parameters Calibration List appendices are auto-generated from data entered elsewhere —
-          no re-entry needed.
+          Log appendix is auto-generated from data entered elsewhere — no re-entry needed.
         </span>
       </div>
       <CoverPage totalPages={totalPages} />
@@ -191,7 +185,6 @@ export function ReportPreview() {
       <CalibrationPages startPageNumber={calibrationStartPage} totalPages={totalPages} />
       <StudyResultsPage pageNumber={sopPageNumber} totalPages={totalPages} />
       <SopAvailabilityPage pageNumber={sopPageNumber + 1} totalPages={totalPages} />
-      <CriticalParametersCalibrationPage pageNumber={criticalParamsPageNumber + 1} totalPages={totalPages} />
       <SignatureLogPage pageNumber={signatureLogPageNumber + 1} totalPages={totalPages} />
       <DeviationsPage pageNumber={deviationsPageNumber + 1} totalPages={totalPages} />
       <AttachmentsListPage pageNumber={attachmentsPageNumber + 1} totalPages={totalPages} />

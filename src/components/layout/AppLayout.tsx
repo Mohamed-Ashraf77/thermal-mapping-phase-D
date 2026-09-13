@@ -363,15 +363,25 @@ export function AppLayout() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ report, sensors }),
       });
-      if (!createRes.ok) {
+      const createContentType = createRes.headers.get('content-type') ?? '';
+      // On static hosts (e.g. Vercel without a serverless PDF function) the
+      // SPA rewrite sends back index.html with a 200 status for any
+      // unmatched route — treat that as "no PDF backend available" instead
+      // of trying to parse HTML as JSON.
+      if (!createRes.ok || !createContentType.includes('application/json')) {
         openPrintFallback();
         return;
       }
       const { id } = (await createRes.json()) as { id: string };
       const pdfRes = await fetch(`/api/generate-pdf/${id}`, { method: 'POST' });
-      if (!pdfRes.ok) {
-        const body = await pdfRes.json().catch(() => ({ error: 'PDF generation failed.' }));
-        throw new Error(body.error ?? 'PDF generation failed.');
+      const pdfContentType = pdfRes.headers.get('content-type') ?? '';
+      if (!pdfRes.ok || !pdfContentType.includes('application/pdf')) {
+        if (pdfContentType.includes('application/json')) {
+          const body = await pdfRes.json().catch(() => ({ error: 'PDF generation failed.' }));
+          throw new Error(body.error ?? 'PDF generation failed.');
+        }
+        openPrintFallback();
+        return;
       }
       const blob = await pdfRes.blob();
       const url = URL.createObjectURL(blob);

@@ -74,7 +74,8 @@ export function PrintRoute({ jobId }: { jobId: string }) {
     async function loadJob() {
       try {
         const res = await fetch(`/api/print-jobs/${jobId}`);
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') ?? '';
+        if (res.ok && contentType.includes('application/json')) {
           const json = await res.json();
           if (!cancelled) {
             setData({ report: json.report as ReportDocument, sensors: (json.sensors ?? []) as SensorData[] });
@@ -82,6 +83,10 @@ export function PrintRoute({ jobId }: { jobId: string }) {
           return;
         }
 
+        // Non-JSON (e.g. a static-host SPA rewrite serving index.html) or a
+        // non-OK response both mean there's no real print-job backend or the
+        // job wasn't found — fall back to the client-side session copy used
+        // by the "open print dialog" fallback path.
         const fallback = getJobFromSessionStorage(jobId);
         if (!fallback) {
           throw new Error(`Print job not found or expired (HTTP ${res.status}).`);
@@ -110,6 +115,25 @@ export function PrintRoute({ jobId }: { jobId: string }) {
   return (
     <ReportProvider initialReport={data.report} persist={false}>
       <AnalysisProvider initialSensors={data.sensors} persist={false}>
+        {isPrintAutoOpen() && (
+          <div
+            className="print:hidden"
+            style={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 50,
+              background: '#1e293b',
+              color: '#fff',
+              padding: '10px 16px',
+              fontFamily: 'sans-serif',
+              fontSize: 13,
+              textAlign: 'center',
+            }}
+          >
+            The print dialog will open automatically. Choose <strong>&quot;Save as PDF&quot;</strong> as the destination to
+            download this report as a PDF file.
+          </div>
+        )}
         <ReportPreview />
         <ReadySignal />
       </AnalysisProvider>
