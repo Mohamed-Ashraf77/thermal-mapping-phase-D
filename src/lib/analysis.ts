@@ -67,15 +67,29 @@ export interface RecoveryResult {
 // Parsing
 // ---------------------------------------------------------------------------
 
-/** Parses a "M/D/YY(YY)" date + "H:MM(:SS)" time pair into epoch ms, or null
- * if either doesn't match the expected LogTag-style format. */
+/** Parses a date string in either "M/D/YY(YY)" or "YYYY-MM-DD" form, plus an
+ * "H:MM(:SS)" time string, into epoch ms — or null if neither date format
+ * nor the time format match (LogTag/TempNote exports have been observed
+ * using both date styles depending on device locale/firmware settings). */
 export function parseDateTime(dateStr: string, timeStr: string): number | null {
-  const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (!m) return null;
-  const month = parseInt(m[1], 10);
-  const day = parseInt(m[2], 10);
-  let year = parseInt(m[3], 10);
-  if (year < 100) year += 2000;
+  let month: number;
+  let day: number;
+  let year: number;
+
+  const slash = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  const iso = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (slash) {
+    month = parseInt(slash[1], 10);
+    day = parseInt(slash[2], 10);
+    year = parseInt(slash[3], 10);
+    if (year < 100) year += 2000;
+  } else if (iso) {
+    year = parseInt(iso[1], 10);
+    month = parseInt(iso[2], 10);
+    day = parseInt(iso[3], 10);
+  } else {
+    return null;
+  }
 
   let t = timeStr.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
   if (!t) {
@@ -129,9 +143,10 @@ export function detectFormat(text: string): DeviceFormat {
     return 'tempnote';
   }
 
-  // LogTag: first data line is  <number>,<MM/DD/YYYY>,<HH:MM:SS>,...
+  // LogTag: first data line is  <number>,<date>,<HH:MM:SS>,...
+  // Date can be MM/DD/YYYY or YYYY-MM-DD depending on device/firmware locale.
   const firstData = firstLines.find((l) => l.length > 0) || '';
-  if (/^\d+,\d{1,2}\/\d{1,2}\/\d{4},\d{2}:\d{2}:\d{2}/.test(firstData)) {
+  if (/^\d+,(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{1,2}-\d{1,2}),\d{2}:\d{2}:\d{2}/.test(firstData)) {
     return 'logtag';
   }
 
@@ -144,11 +159,12 @@ export function detectFormat(text: string): DeviceFormat {
 
 /**
  * LogTag CSV: no header, every line is data.
- * Columns: index, MM/DD/YYYY, HH:MM:SS, temperature, humidity [, optional note]
+ * Columns: index, date (MM/DD/YYYY or YYYY-MM-DD), HH:MM:SS, temperature, humidity [, optional note]
  *
  * Example:
  *   1,09/08/2026,15:36:48,25.1,68.1,
  *   4,09/08/2026,15:42:48,24.2,73.6, Inspection Mark
+ *   1,2026-08-09,15:36:48,25.1,68.1,
  */
 function parseLogTagCsv(id: string, lines: string[]): SensorData {
   const rows: SensorReading[] = [];
