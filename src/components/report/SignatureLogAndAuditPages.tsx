@@ -42,9 +42,6 @@ export function SignatureLogPage(props: { pageNumber: number; totalPages: number
   return (
     <ReportPageFrame pageNumber={props.pageNumber} totalPages={props.totalPages}>
       <h2 className="mb-1 text-sm font-bold text-slate-800">Appendix N.3 — Signature Log</h2>
-      <p className="mb-4 text-[10px] italic text-slate-500">
-        Auto-generated from the names entered in the Document Review &amp; Approval and Final Approval sections.
-      </p>
       <table className="w-full border-collapse text-[10px]">
         <thead>
           <tr>
@@ -80,55 +77,6 @@ export function SignatureLogPage(props: { pageNumber: number; totalPages: number
                 <td className="border border-slate-300 px-2 py-3">{row.company || '—'}</td>
                 <td className="border border-slate-300 px-2 py-3"></td>
                 <td className="border border-slate-300 px-2 py-3"></td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </ReportPageFrame>
-  );
-}
-
-export function CriticalParametersCalibrationPage(props: { pageNumber: number; totalPages: number }) {
-  const { report } = useReport();
-  if (!report) return null;
-  const records = report.calibrationRecords;
-
-  return (
-    <ReportPageFrame pageNumber={props.pageNumber} totalPages={props.totalPages}>
-      <h2 className="mb-1 text-sm font-bold text-slate-800">Appendix N.2 — Critical Parameters Calibration List</h2>
-      <p className="mb-4 text-[10px] italic text-slate-500">
-        Auto-generated from the Calibration Records section.
-      </p>
-      <table className="w-full border-collapse text-[10px]">
-        <thead>
-          <tr>
-            <th className="border border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">No.</th>
-            <th className="border border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">Name</th>
-            <th className="border border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">Code No.</th>
-            <th className="border border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">Critical Part</th>
-            <th className="border border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">Calibration Code</th>
-            <th className="border border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">Calibration Date</th>
-            <th className="border border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">Due Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          {records.length === 0 ? (
-            <tr>
-              <td colSpan={7} className="border border-slate-300 px-2 py-4 text-center text-slate-400">
-                No calibration records entered yet.
-              </td>
-            </tr>
-          ) : (
-            records.map((rec, i) => (
-              <tr key={rec.id}>
-                <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
-                <td className="border border-slate-300 px-2 py-1.5">{report.chamberDescription.systemName || '—'}</td>
-                <td className="border border-slate-300 px-2 py-1.5">{report.chamberDescription.code || '—'}</td>
-                <td className="border border-slate-300 px-2 py-1.5">{rec.equipmentDescription || '—'}</td>
-                <td className="border border-slate-300 px-2 py-1.5">{rec.tagOrIdNumber || '—'}</td>
-                <td className="border border-slate-300 px-2 py-1.5">{rec.mostRecentCalibrationDate || '—'}</td>
-                <td className="border border-slate-300 px-2 py-1.5">{rec.calibrationDueDate || '—'}</td>
               </tr>
             ))
           )}

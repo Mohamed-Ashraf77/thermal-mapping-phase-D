@@ -28,6 +28,7 @@ import {
 import { SignatureLogPage } from './SignatureLogAndAuditPages';
 import { useReport } from '../../store/ReportContext';
 import { useAnalysis } from '../../store/AnalysisContext';
+import { PROTOCOL_PAGE_MAP } from './tocData';
 
 // Placeholders for Protocol mode charts and worst-points layout
 function ChartsPlaceholderPage({ pageNumber, totalPages, title }: { pageNumber: number; totalPages: number; title: string }) {
@@ -78,7 +79,7 @@ export function ReportPreview() {
           </span>
         </div>
         <CoverPage totalPages={totalPages} />                                    {/* Page 1 */}
-        <TableOfContentsPage totalPages={totalPages} />                           {/* Page 2 */}
+        <TableOfContentsPage totalPages={totalPages} pageMap={PROTOCOL_PAGE_MAP} /> {/* Page 2 */}
         <ApprovalPage totalPages={totalPages} />                                  {/* Page 3 */}
         <IntroductionPage pageNumber={4} totalPages={totalPages} />               {/* Page 4 */}
         <ProtocolExecutionInstructionsPage pageNumber={5} totalPages={totalPages} /> {/* Page 5 */}
@@ -161,6 +162,25 @@ export function ReportPreview() {
     calibrationPageCount +
     FIXED_TRAILING_PAGES_REPORT;
 
+  const dynamicPageMap: Record<string, number> = {
+    docReviewApproval: 3,
+    introduction: 4,
+    systemBrief: 5,
+    stabilityChamberDesc: 7,
+    layoutPositions: layoutPageNumber,
+    testResults: layoutPageNumber,
+    chamberPhotos: photosPageNumber,
+    testDataSheet: testDataStartPage,
+    charts: chartsStartPage,
+    challengeTests: challengeStartPage,
+    calibrationSection: calibrationStartPage,
+    sopAvailability: sopPageNumber + 1,
+    signatureLog: signatureLogPageNumber + 1,
+    deviationForm: deviationsPageNumber + 1,
+    attachmentsList: attachmentsPageNumber + 1,
+    finalApproval: finalApprovalPageNumber + 1,
+  };
+
   return (
     <div id="report-print-root" className="light-surface flex flex-col items-center gap-8 bg-slate-100 py-8 print:bg-white print:py-0">
       <div className="mb-2 flex max-w-[210mm] items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 print:hidden">
@@ -170,7 +190,7 @@ export function ReportPreview() {
         </span>
       </div>
       <CoverPage totalPages={totalPages} />
-      <TableOfContentsPage totalPages={totalPages} />
+      <TableOfContentsPage totalPages={totalPages} pageMap={dynamicPageMap} />
       <ApprovalPage totalPages={totalPages} />
       <IntroductionPage pageNumber={4} totalPages={totalPages} />
       <SystemBriefDescriptionPage pageNumber={5} totalPages={totalPages} />
