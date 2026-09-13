@@ -281,30 +281,48 @@ function extractMulticonStartTime(fileName: string): number | null {
 /**
  * Parses the Multicon "Date and time" cell.
  *
- * The cell contains elapsed time since recording start in one of these forms:
- *   MM:SS.s      e.g. "41:08.4"   → 41 min 8.4 s
- *   HH:MM:SS     e.g. "01:30:00"  → 1 h 30 min 0 s  (three colon-parts)
+ * Two known variants exist depending on export settings:
+ *   1. Absolute timestamp: "YYYY-MM-DD HH:MM:SS.s" e.g. "2026-09-01 12:41:08.4"
+ *   2. Elapsed time since recording start:
+ *        MM:SS.s      e.g. "41:08.4"   → 41 min 8.4 s
+ *        HH:MM:SS     e.g. "01:30:00"  → 1 h 30 min 0 s (three colon-parts)
  *
- * Returns elapsed milliseconds, or null on parse failure.
+ * Returns `{ absoluteMs }` when the cell is a full timestamp, or
+ * `{ elapsedMs }` when it's an elapsed duration, or null on parse failure.
  */
-function parseMulticonElapsed(cell: string): number | null {
+function parseMulticonDateTimeCell(cell: string): { absoluteMs: number } | { elapsedMs: number } | null {
   const c = cell.trim();
 
-  // Three-part: HH:MM:SS or HH:MM:SS.s
+  // Absolute timestamp: "YYYY-MM-DD HH:MM:SS[.s]"
+  const abs = c.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)$/);
+  if (abs) {
+    const year = parseInt(abs[1], 10);
+    const month = parseInt(abs[2], 10) - 1;
+    const day = parseInt(abs[3], 10);
+    const hour = parseInt(abs[4], 10);
+    const minute = parseInt(abs[5], 10);
+    const secFloat = parseFloat(abs[6]);
+    const sec = Math.floor(secFloat);
+    const ms = Math.round((secFloat - sec) * 1000);
+    const dt = new Date(year, month, day, hour, minute, sec, ms);
+    return isNaN(dt.getTime()) ? null : { absoluteMs: dt.getTime() };
+  }
+
+  // Three-part elapsed: HH:MM:SS or HH:MM:SS.s
   const three = c.match(/^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/);
   if (three) {
     const h = parseInt(three[1], 10);
     const m = parseInt(three[2], 10);
     const s = parseFloat(three[3]);
-    return (h * 3600 + m * 60 + s) * 1000;
+    return { elapsedMs: (h * 3600 + m * 60 + s) * 1000 };
   }
 
-  // Two-part: MM:SS or MM:SS.s  (the common Multicon format)
+  // Two-part elapsed: MM:SS or MM:SS.s (the common Multicon format)
   const two = c.match(/^(\d+):(\d{2}(?:\.\d+)?)$/);
   if (two) {
     const m = parseInt(two[1], 10);
     const s = parseFloat(two[2]);
-    return (m * 60 + s) * 1000;
+    return { elapsedMs: (m * 60 + s) * 1000 };
   }
 
   return null;
@@ -379,9 +397,12 @@ function parseMulticonCsv(fileName: string, lines: string[]): SensorData[] {
     }];
   }
 
-  // Extract start time from filename
+  // Extract start time from filename — used only as a fallback when the
+  // "Date and time" column contains elapsed durations instead of absolute
+  // timestamps (some Multicon export profiles use elapsed time).
   const startMs = extractMulticonStartTime(fileName);
   const noTimestamp = startMs === null;
+  let usedAbsoluteTimestamps = false;
 
   // Build a rows array per channel
   const channelRows: SensorReading[][] = channels.map(() => []);
@@ -392,11 +413,17 @@ function parseMulticonCsv(fileName: string, lines: string[]): SensorData[] {
     const parts = raw.split(',');
     if (parts.length < 3) continue;
 
-    // Column 1 is elapsed time
-    const elapsedMs = parseMulticonElapsed(parts[1] || '');
-    if (elapsedMs === null) continue;
+    // Column 1 is either an absolute timestamp or an elapsed duration
+    const parsed = parseMulticonDateTimeCell(parts[1] || '');
+    if (parsed === null) continue;
 
-    const absoluteMs = noTimestamp ? elapsedMs : (startMs! + elapsedMs);
+    let absoluteMs: number;
+    if ('absoluteMs' in parsed) {
+      usedAbsoluteTimestamps = true;
+      absoluteMs = parsed.absoluteMs;
+    } else {
+      absoluteMs = noTimestamp ? parsed.elapsedMs : startMs! + parsed.elapsedMs;
+    }
 
     for (let ch = 0; ch < channels.length; ch++) {
       const { colIdx } = channels[ch];
@@ -422,7 +449,7 @@ function parseMulticonCsv(fileName: string, lines: string[]): SensorData[] {
     if (rows.length === 0) {
       base.error = `Multicon channel ${ch.label}: no valid data rows.`;
     }
-    if (noTimestamp) {
+    if (noTimestamp && !usedAbsoluteTimestamps) {
       base.error = (base.error ? base.error + ' ' : '') +
         'Warning: start datetime not found in filename — timestamps are relative to recording start.';
     }

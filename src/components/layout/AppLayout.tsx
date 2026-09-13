@@ -343,10 +343,22 @@ export function AppLayout() {
     setPdfState('generating');
     setPdfError(null);
 
+    // Open the tab synchronously, in direct response to the click, so
+    // browsers don't treat it as an unsolicited pop-up (any `await` before
+    // window.open() breaks the "user gesture" chain and gets blocked).
+    const fallbackWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+
     const openPrintFallback = () => {
       const jobId = crypto.randomUUID();
       sessionStorage.setItem(`thermal-print-job:${jobId}`, JSON.stringify({ report, sensors }));
       const printUrl = `${window.location.origin}/print/${jobId}?autoPrint=1`;
+      if (fallbackWindow && !fallbackWindow.closed) {
+        fallbackWindow.location.href = printUrl;
+        setPdfState('idle');
+        return true;
+      }
+      // The pre-opened tab was blocked or closed — try opening fresh as a
+      // last resort (still likely to be blocked outside a user gesture).
       const popup = window.open(printUrl, '_blank', 'noopener,noreferrer');
       if (!popup) {
         setPdfState('error');
@@ -383,6 +395,9 @@ export function AppLayout() {
         openPrintFallback();
         return;
       }
+      // A real PDF backend produced the file directly — the pre-opened tab
+      // is no longer needed for the fallback flow.
+      fallbackWindow?.close();
       const blob = await pdfRes.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
