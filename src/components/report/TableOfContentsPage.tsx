@@ -17,6 +17,8 @@ export function TableOfContentsPage(props: { totalPages: number; pageMap?: Recor
         return false;
       }
     }
+    // Hide entries whose page isn't part of this document (e.g. Addendum in a report).
+    if (entry.key === 'addendum' && !props.pageMap?.addendum) return false;
     return true;
   });
 
