@@ -4,6 +4,7 @@ import { AnalysisProvider } from '../store/AnalysisContext';
 import { ReportPreview } from '../components/report/ReportPreview';
 import type { ReportDocument } from '../types/report';
 import type { SensorData } from '../lib/analysis';
+import { parsePartsParam } from '../lib/reportParts';
 
 function isPrintAutoOpen(): boolean {
   return new URLSearchParams(window.location.search).get('autoPrint') === '1';
@@ -138,7 +139,7 @@ export function PrintRoute({ jobId }: { jobId: string }) {
             download this report as a PDF file.
           </div>
         )}
-        <ReportPreview />
+        <ReportPreview parts={parsePartsParam(new URLSearchParams(window.location.search).get('parts'))} />
         <ReadySignal />
       </AnalysisProvider>
     </ReportProvider>

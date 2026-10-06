@@ -24,6 +24,7 @@
  * the same active section without drilling through multiple layers.
  */
 
+import { ALL_REPORT_PARTS, partsToParam, type ReportParts } from '../../lib/reportParts';
 import { useState, useCallback, useEffect } from 'react';
 import {
   LayoutDashboard,
@@ -322,6 +323,8 @@ export function AppLayout() {
   const [pdfState, setPdfState] = useState<'idle' | 'generating' | 'error'>('idle');
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [pdfFallbackUrl, setPdfFallbackUrl] = useState<string | null>(null);
+  const [parts, setParts] = useState<ReportParts>(ALL_REPORT_PARTS);
+  const [partsOpen, setPartsOpen] = useState(false);
 
   // When the user opens a document, switch to document-info section automatically
   const handleOpenDocument = useCallback((id: string | null) => {
@@ -341,6 +344,11 @@ export function AppLayout() {
   // ── PDF download ──────────────────────────────────────────────────
   async function handleDownloadPdf() {
     if (!report) return;
+    if (!parts.main && !parts.charts && !parts.calibration) {
+      setPdfState('error');
+      setPdfError('Select at least one attachment to include.');
+      return;
+    }
     setPdfState('generating');
     setPdfError(null);
     setPdfFallbackUrl(null);
@@ -363,7 +371,7 @@ export function AppLayout() {
       // navigated to our origin doesn't reliably inherit this tab's
       // sessionStorage in every browser.
       localStorage.setItem(`thermal-print-job:${jobId}`, JSON.stringify({ report, sensors, savedAt: Date.now() }));
-      const printUrl = `${window.location.origin}/print/${jobId}?autoPrint=1`;
+      const printUrl = `${window.location.origin}/print/${jobId}?autoPrint=1&parts=${partsToParam(parts)}`;
       if (fallbackWindow && !fallbackWindow.closed) {
         fallbackWindow.location.href = printUrl;
         setPdfState('idle');
@@ -658,6 +666,18 @@ export function AppLayout() {
                 >
                   <Printer className="h-3.5 w-3.5" /> Print
                 </button>
+                <div className="relative">
+                  <button type="button" onClick={() => setPartsOpen((o) => !o)} className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 transition">Attachments</button>
+                  {partsOpen && (
+                    <div className="absolute right-0 top-full z-50 mt-1 w-60 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-lg">
+                      <p className="mb-2 font-bold">Include in PDF</p>
+                      {([['main', 'Main report'], ['charts', 'Charts'], ['calibration', 'Calibration certificates']] as const).map(([k, label]) => (
+                        <label key={k} className="flex items-center gap-2 py-1"><input type="checkbox" checked={parts[k]} onChange={(e) => setParts({ ...parts, [k]: e.target.checked })} />{label}</label>
+                      ))}
+                      <button type="button" className="mt-2 text-[11px] underline" onClick={() => setParts(ALL_REPORT_PARTS)}>Include all</button>
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={handleDownloadPdf}

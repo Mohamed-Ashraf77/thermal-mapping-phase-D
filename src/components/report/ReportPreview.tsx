@@ -29,6 +29,7 @@ import { SignatureLogPage } from './SignatureLogAndAuditPages';
 import { useReport } from '../../store/ReportContext';
 import { useAnalysis } from '../../store/AnalysisContext';
 import { PROTOCOL_PAGE_MAP } from './tocData';
+import { ALL_REPORT_PARTS, type ReportParts } from '../../lib/reportParts';
 
 // Placeholders for Protocol mode charts and worst-points layout
 function ChartsPlaceholderPage({ pageNumber, totalPages, title }: { pageNumber: number; totalPages: number; title: string }) {
@@ -59,7 +60,7 @@ function WorstPointsLayoutPage({ pageNumber, totalPages }: { pageNumber: number;
   );
 }
 
-export function ReportPreview() {
+export function ReportPreview({ parts = ALL_REPORT_PARTS }: { parts?: ReportParts } = {}) {
   const { report } = useReport();
   const { sensors } = useAnalysis();
 
@@ -190,7 +191,7 @@ export function ReportPreview() {
           Log appendix is auto-generated from data entered elsewhere — no re-entry needed.
         </span>
       </div>
-      <CoverPage totalPages={totalPages} />
+      {parts.main && <><CoverPage totalPages={totalPages} />
       <TableOfContentsPage totalPages={totalPages} pageMap={dynamicPageMap} />
       <ApprovalPage totalPages={totalPages} />
       <IntroductionPage pageNumber={4} totalPages={totalPages} />
@@ -200,16 +201,17 @@ export function ReportPreview() {
       <LoadingDescriptionPages startPageNumber={loadingStartPage} totalPages={totalPages} />
       <ChamberLayoutPage pageNumber={layoutPageNumber} totalPages={totalPages} />
       <ChamberPhotosPage pageNumber={photosPageNumber} totalPages={totalPages} />
-      <TestDataSheetPages startPageNumber={testDataStartPage} totalPages={totalPages} />
-      <ChartsPages startPageNumber={chartsStartPage} totalPages={totalPages} />
-      <ChallengeTestPages startPageNumber={challengeStartPage} totalPages={totalPages} />
-      <CalibrationPages startPageNumber={calibrationStartPage} totalPages={totalPages} />
+      <TestDataSheetPages startPageNumber={testDataStartPage} totalPages={totalPages} /></>}
+      {parts.charts && <ChartsPages startPageNumber={chartsStartPage} totalPages={totalPages} />}
+      {parts.main && <ChallengeTestPages startPageNumber={challengeStartPage} totalPages={totalPages} />}
+      {parts.calibration && <CalibrationPages startPageNumber={calibrationStartPage} totalPages={totalPages} />}
+      {parts.main && <>
       <StudyResultsPage pageNumber={sopPageNumber} totalPages={totalPages} />
       <SopAvailabilityPage pageNumber={sopPageNumber + 1} totalPages={totalPages} />
       <SignatureLogPage pageNumber={signatureLogPageNumber + 1} totalPages={totalPages} />
       <DeviationsPage pageNumber={deviationsPageNumber + 1} totalPages={totalPages} />
       <AttachmentsListPage pageNumber={attachmentsPageNumber + 1} totalPages={totalPages} />
-      <FinalApprovalPage pageNumber={finalApprovalPageNumber + 1} totalPages={totalPages} />
+      <FinalApprovalPage pageNumber={finalApprovalPageNumber + 1} totalPages={totalPages} /></>}
     </div>
   );
 }
